@@ -1,0 +1,20 @@
+{
+  "name": "brainstorm-notebook",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build:clean": "rm -rf dist && mkdir -p dist",
+    "build:content": "BUILD_TARGET=content vite build",
+    "build:sw": "BUILD_TARGET=service-worker vite build",
+    "build:options": "BUILD_TARGET=options vite build",
+    "build:copy": "cp -r public/* dist/",
+    "build": "npm run build:clean && npm run build:content && npm run build:sw && npm run build:options && npm run build:copy"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.3",
+    "@types/chrome": "^0.1.37",
+    "preact": "^10.29.0",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21"
+  }
+}

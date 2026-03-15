@@ -1,0 +1,168 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f9fafb;
+  color: #1f2937;
+  padding: 40px;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 22px;
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  color: #6b7280;
+  font-size: 14px;
+  margin-bottom: 28px;
+}
+
+.section {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.section h2 {
+  font-size: 15px;
+  margin-bottom: 14px;
+}
+
+.passphrase-input {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.passphrase-input input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.add-key-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.add-key-form input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+button {
+  padding: 8px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #374151;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #f3f4f6;
+}
+
+button.primary {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+
+button.primary:hover {
+  background: #1d4ed8;
+}
+
+button.danger {
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+button.danger:hover {
+  background: #fef2f2;
+}
+
+.key-list {
+  list-style: none;
+}
+
+.key-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  background: #ffffff;
+  cursor: grab;
+}
+
+.key-item:active {
+  cursor: grabbing;
+}
+
+.key-item .drag-handle {
+  color: #9ca3af;
+  font-size: 16px;
+  user-select: none;
+}
+
+.key-item .key-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.key-item .key-preview {
+  font-size: 12px;
+  color: #9ca3af;
+  font-family: monospace;
+}
+
+.key-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 24px;
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+.status-msg {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #059669;
+}
+
+.status-msg.error {
+  color: #dc2626;
+}
+
+.dragging {
+  opacity: 0.5;
+}
+
+.drag-over {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
