@@ -3,10 +3,11 @@ import { layoutGraph, getCanvasHeight } from './graph-layout';
 import { renderGraph, hitTestNode, createRenderState, RenderState } from './graph-canvas';
 import { findAncestors, findDirectParents } from './graph-interaction';
 import { saveGraph, loadGraph } from '../shared/storage';
-import { getConversationId, startObserver, ConversationTurn } from './observer';
+import { getConversationId, startObserver, extractAllTurns, ConversationTurn } from './observer';
 import { ExtensionMessage, AnalyzeTurnPayload } from '../shared/messages';
 import panelCss from './panel.css?inline';
 
+let floatingBtn: HTMLDivElement | null = null;
 let panelHost: HTMLDivElement | null = null;
 let shadow: ShadowRoot | null = null;
 let canvas: HTMLCanvasElement | null = null;
@@ -16,6 +17,32 @@ let currentGraph: MindNoteGraph | null = null;
 let renderState: RenderState = createRenderState();
 let panelWidth = 400;
 let cleanupObserver: (() => void) | null = null;
+let isRebuilding = false;
+
+/** Inject a floating button on the page so users can open the panel without the extension icon. */
+export function injectFloatingButton(): void {
+  if (floatingBtn) return;
+  floatingBtn = document.createElement('div');
+  floatingBtn.id = 'brainstorm-notebook-fab';
+  floatingBtn.title = 'Brainstorm Notebook';
+  floatingBtn.textContent = '\uD83E\uDDE0';
+  floatingBtn.style.cssText = `
+    position: fixed; bottom: 20px; right: 20px; z-index: 999998;
+    width: 44px; height: 44px; border-radius: 50%;
+    background: #2563eb; color: white; font-size: 22px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    border: none; user-select: none; transition: transform 0.15s;
+  `;
+  floatingBtn.addEventListener('mouseenter', () => {
+    if (floatingBtn) floatingBtn.style.transform = 'scale(1.1)';
+  });
+  floatingBtn.addEventListener('mouseleave', () => {
+    if (floatingBtn) floatingBtn.style.transform = 'scale(1)';
+  });
+  floatingBtn.addEventListener('click', togglePanel);
+  document.body.appendChild(floatingBtn);
+}
 
 export function togglePanel(): void {
   if (panelHost) {
@@ -56,6 +83,7 @@ function createPanel(): void {
   header.innerHTML = `
     <span>Brainstorm Notebook</span>
     <div class="bn-header-actions">
+      <button class="bn-btn bn-btn-primary" id="bn-rebuild">Rebuild</button>
       <button class="bn-btn" id="bn-reformat">Reformat</button>
       <button class="bn-btn" id="bn-close">Close</button>
     </div>
@@ -79,6 +107,9 @@ function createPanel(): void {
   shadow.appendChild(panel);
 
   // Event listeners
+  const rebuildBtn = shadow.getElementById('bn-rebuild');
+  rebuildBtn?.addEventListener('click', rebuildFromConversation);
+
   const reformatBtn = shadow.getElementById('bn-reformat');
   reformatBtn?.addEventListener('click', reformat);
 
@@ -316,6 +347,103 @@ async function onResponseComplete(
   } catch (err) {
     setStatus((err as Error).message, false, true);
   }
+}
+
+async function rebuildFromConversation(): Promise<void> {
+  if (isRebuilding) return;
+  isRebuilding = true;
+
+  const convId = getConversationId();
+  if (!convId) {
+    setStatus('Navigate to a conversation first', false, true);
+    isRebuilding = false;
+    return;
+  }
+
+  const turns = extractAllTurns();
+  if (turns.length === 0) {
+    setStatus('No conversation turns found', false, true);
+    isRebuilding = false;
+    return;
+  }
+
+  // Reset graph
+  currentGraph = { conversationId: convId, nodes: [], edges: [] };
+  reformat();
+
+  setStatus(`Rebuilding: 0/${turns.length} turns...`, true);
+
+  for (let i = 0; i < turns.length; i++) {
+    const turn = turns[i];
+    setStatus(`Rebuilding: ${i + 1}/${turns.length} turns...`, true);
+
+    const payload: AnalyzeTurnPayload = {
+      existingNodes: currentGraph!.nodes.map((n) => ({
+        id: n.id,
+        title: n.title,
+        summary: n.summary,
+      })),
+      humanMessage: turn.human,
+      assistantMessage: turn.assistant,
+    };
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'ANALYZE_TURN',
+        payload,
+      } as ExtensionMessage);
+
+      if (response.type === 'API_ERROR') {
+        setStatus(`Error at turn ${i + 1}: ${response.error}`, false, true);
+        isRebuilding = false;
+        return;
+      }
+
+      const result = response.payload;
+      const newNodeId = `node-${Date.now()}-${i}`;
+
+      const newNode: GraphNode = {
+        id: newNodeId,
+        messageIndex: i,
+        title: result.title,
+        summary: result.summary,
+        level: 0,
+        x: 0,
+        y: 0,
+      };
+
+      const newEdges: GraphEdge[] = [];
+      for (const parent of result.parents) {
+        let sourceId = parent.nodeId;
+        if (sourceId === 'LAST' && currentGraph!.nodes.length > 0) {
+          sourceId = currentGraph!.nodes[currentGraph!.nodes.length - 1].id;
+        }
+        if (currentGraph!.nodes.some((n) => n.id === sourceId)) {
+          newEdges.push({
+            source: sourceId,
+            target: newNodeId,
+            strength: parent.strength,
+          });
+        }
+      }
+
+      currentGraph = {
+        ...currentGraph!,
+        nodes: [...currentGraph!.nodes, newNode],
+        edges: [...currentGraph!.edges, ...newEdges],
+      };
+
+      reformat();
+    } catch (err) {
+      setStatus(`Error at turn ${i + 1}: ${(err as Error).message}`, false, true);
+      isRebuilding = false;
+      return;
+    }
+  }
+
+  await saveGraph(currentGraph!);
+  setStatus(`Rebuilt: ${currentGraph!.nodes.length} nodes`);
+  isRebuilding = false;
 }
 
 function setStatus(text: string, loading = false, error = false): void {

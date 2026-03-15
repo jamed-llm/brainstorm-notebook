@@ -22,67 +22,70 @@ export function getConversationId(): string | null {
   return match?.[1] ?? null;
 }
 
+function findConversationContainer(): Element | null {
+  // Try selectors first
+  for (const selector of SELECTORS.conversationList.split(', ')) {
+    const el = document.querySelector(selector);
+    if (el) return el;
+  }
+  // Fallback: find main content area
+  return document.querySelector('main') ?? document.querySelector('[role="main"]');
+}
+
+function extractTurnsFromSelectors(): ConversationTurn[] {
+  const turns: ConversationTurn[] = [];
+
+  const allMessages = document.querySelectorAll(
+    `${SELECTORS.humanMessage}, ${SELECTORS.assistantMessage}`,
+  );
+
+  if (allMessages.length === 0) {
+    return extractTurnsFallback();
+  }
+
+  let currentHuman: string | null = null;
+  for (const el of allMessages) {
+    const isHuman =
+      el.matches(SELECTORS.humanMessage) ||
+      el.querySelector('[data-testid="human-turn"]') !== null;
+
+    const text = el.textContent?.trim() ?? '';
+    if (isHuman) {
+      currentHuman = text;
+    } else if (currentHuman !== null) {
+      turns.push({ human: currentHuman, assistant: text });
+      currentHuman = null;
+    }
+  }
+
+  return turns;
+}
+
+function extractTurnsFallback(): ConversationTurn[] {
+  const container = findConversationContainer();
+  if (!container) return [];
+
+  const turns: ConversationTurn[] = [];
+  const children = Array.from(container.children);
+
+  for (let i = 0; i + 1 < children.length; i += 2) {
+    turns.push({
+      human: children[i].textContent?.trim() ?? '',
+      assistant: children[i + 1].textContent?.trim() ?? '',
+    });
+  }
+
+  return turns;
+}
+
+/** Extract all conversation turns currently visible in the DOM. */
+export function extractAllTurns(): ConversationTurn[] {
+  return extractTurnsFromSelectors();
+}
+
 export function startObserver(onResponseComplete: ResponseCompleteCallback): () => void {
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let lastTurnCount = 0;
-
-  function findConversationContainer(): Element | null {
-    // Try selectors first
-    for (const selector of SELECTORS.conversationList.split(', ')) {
-      const el = document.querySelector(selector);
-      if (el) return el;
-    }
-    // Fallback: find main content area
-    return document.querySelector('main') ?? document.querySelector('[role="main"]');
-  }
-
-  function extractTurns(): ConversationTurn[] {
-    const turns: ConversationTurn[] = [];
-
-    // Strategy: walk all message blocks in order, pairing human+assistant
-    const allMessages = document.querySelectorAll(
-      `${SELECTORS.humanMessage}, ${SELECTORS.assistantMessage}`,
-    );
-
-    if (allMessages.length === 0) {
-      // Fallback: get all direct children of conversation container
-      return extractTurnsFallback();
-    }
-
-    let currentHuman: string | null = null;
-    for (const el of allMessages) {
-      const isHuman =
-        el.matches(SELECTORS.humanMessage) ||
-        el.querySelector('[data-testid="human-turn"]') !== null;
-
-      const text = el.textContent?.trim() ?? '';
-      if (isHuman) {
-        currentHuman = text;
-      } else if (currentHuman !== null) {
-        turns.push({ human: currentHuman, assistant: text });
-        currentHuman = null;
-      }
-    }
-
-    return turns;
-  }
-
-  function extractTurnsFallback(): ConversationTurn[] {
-    const container = findConversationContainer();
-    if (!container) return [];
-
-    const turns: ConversationTurn[] = [];
-    const children = Array.from(container.children);
-
-    for (let i = 0; i + 1 < children.length; i += 2) {
-      turns.push({
-        human: children[i].textContent?.trim() ?? '',
-        assistant: children[i + 1].textContent?.trim() ?? '',
-      });
-    }
-
-    return turns;
-  }
 
   function isGenerating(): boolean {
     for (const selector of SELECTORS.stopButton.split(', ')) {
@@ -94,7 +97,7 @@ export function startObserver(onResponseComplete: ResponseCompleteCallback): () 
   function checkForNewResponse() {
     if (isGenerating()) return;
 
-    const turns = extractTurns();
+    const turns = extractAllTurns();
     if (turns.length > lastTurnCount && turns.length > 0) {
       lastTurnCount = turns.length;
       onResponseComplete(turns, turns[turns.length - 1]);

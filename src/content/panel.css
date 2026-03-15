@@ -43,6 +43,16 @@
   background: #f3f4f6;
 }
 
+.bn-btn-primary {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+
+.bn-btn-primary:hover {
+  background: #1d4ed8;
+}
+
 .bn-canvas-wrap {
   flex: 1;
   overflow: auto;
