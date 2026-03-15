@@ -1,13 +1,35 @@
 // Selectors config — update here when Claude changes its DOM
+// Each message (user or assistant) is wrapped in div[data-test-render-count].
+// User messages contain [data-testid="user-message"].
+// Assistant messages contain [data-is-streaming] and .font-claude-response.
+// Actual assistant text lives in .standard-markdown or .progressive-markdown.
 const SELECTORS = {
   // The main scrollable conversation container
-  conversationList: '[class*="conversation"], [data-testid="conversation-turn-list"], main [role="presentation"]',
+  conversationList: [
+    '[data-testid="conversation-turn-list"]',
+    'main [role="presentation"]',
+  ],
+  // Per-message wrapper (one per user or assistant message)
+  messageWrapper: '[data-test-render-count]',
   // The stop/cancel button visible during generation
-  stopButton: 'button[aria-label="Stop"], button[aria-label="Cancel"]',
-  // Human message blocks
-  humanMessage: '[data-testid="human-turn"], [class*="human"]',
-  // Assistant message blocks
-  assistantMessage: '[data-testid="assistant-turn"], [class*="assistant"]',
+  stopButton: [
+    'button[aria-label="Stop"]',
+    'button[aria-label="Cancel"]',
+    'button[aria-label="Stop Response"]',
+  ],
+  // Identifying a user message within a wrapper
+  userMessageContent: [
+    '[data-testid="user-message"]',
+  ],
+  // Identifying an assistant message within a wrapper
+  assistantMessageContent: [
+    '.standard-markdown',
+    '.progressive-markdown',
+    '.font-claude-response',
+    '[data-is-streaming]',
+  ],
+  // Active streaming indicator
+  streaming: '[data-is-streaming="true"]',
 };
 
 export interface ConversationTurn {
@@ -22,39 +44,86 @@ export function getConversationId(): string | null {
   return match?.[1] ?? null;
 }
 
-function findConversationContainer(): Element | null {
-  // Try selectors first
-  for (const selector of SELECTORS.conversationList.split(', ')) {
+/** Find all message wrapper elements in DOM order. */
+export function findAllMessageElements(): Element[] {
+  return Array.from(document.querySelectorAll(SELECTORS.messageWrapper));
+}
+
+function queryFirst(selectors: string[]): Element | null {
+  for (const selector of selectors) {
     const el = document.querySelector(selector);
     if (el) return el;
   }
+  return null;
+}
+
+function findConversationContainer(): Element | null {
+  // Try selectors first
+  const el = queryFirst(SELECTORS.conversationList);
+  if (el) return el;
   // Fallback: find main content area
   return document.querySelector('main') ?? document.querySelector('[role="main"]');
 }
 
-function extractTurnsFromSelectors(): ConversationTurn[] {
-  const turns: ConversationTurn[] = [];
+function waitForConversationContainer(timeoutMs = 10000): Promise<Element | null> {
+  const container = findConversationContainer();
+  if (container) return Promise.resolve(container);
 
-  const allMessages = document.querySelectorAll(
-    `${SELECTORS.humanMessage}, ${SELECTORS.assistantMessage}`,
-  );
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const interval = setInterval(() => {
+      const el = findConversationContainer();
+      if (el || Date.now() - start > timeoutMs) {
+        clearInterval(interval);
+        resolve(el);
+      }
+    }, 500);
+  });
+}
 
-  if (allMessages.length === 0) {
-    return extractTurnsFallback();
+function queryFirstIn(parent: Element, selectors: string[]): Element | null {
+  for (const selector of selectors) {
+    const el = parent.querySelector(selector);
+    if (el) return el;
   }
+  return null;
+}
 
+/** Check if a message wrapper contains a user message. */
+function isUserMessage(wrapper: Element): boolean {
+  return queryFirstIn(wrapper, SELECTORS.userMessageContent) !== null;
+}
+
+/** Extract clean text from a user message wrapper. */
+function extractUserText(wrapper: Element): string {
+  const contentEl = queryFirstIn(wrapper, SELECTORS.userMessageContent);
+  return contentEl?.textContent?.trim() ?? '';
+}
+
+/** Extract clean text from an assistant message wrapper.
+ *  Targets .standard-markdown / .progressive-markdown to avoid
+ *  picking up "Thought for Xs", button labels, etc. */
+function extractAssistantText(wrapper: Element): string {
+  const contentEl = queryFirstIn(wrapper, SELECTORS.assistantMessageContent);
+  return contentEl?.textContent?.trim() ?? '';
+}
+
+function extractTurnsFromWrappers(): ConversationTurn[] {
+  const wrappers = document.querySelectorAll(SELECTORS.messageWrapper);
+  if (wrappers.length < 2) return [];
+
+  const turns: ConversationTurn[] = [];
   let currentHuman: string | null = null;
-  for (const el of allMessages) {
-    const isHuman =
-      el.matches(SELECTORS.humanMessage) ||
-      el.querySelector('[data-testid="human-turn"]') !== null;
 
-    const text = el.textContent?.trim() ?? '';
-    if (isHuman) {
-      currentHuman = text;
+  for (const wrapper of wrappers) {
+    if (isUserMessage(wrapper)) {
+      currentHuman = extractUserText(wrapper);
     } else if (currentHuman !== null) {
-      turns.push({ human: currentHuman, assistant: text });
-      currentHuman = null;
+      const assistantText = extractAssistantText(wrapper);
+      if (assistantText) {
+        turns.push({ human: currentHuman, assistant: assistantText });
+        currentHuman = null;
+      }
     }
   }
 
@@ -65,14 +134,18 @@ function extractTurnsFallback(): ConversationTurn[] {
   const container = findConversationContainer();
   if (!container) return [];
 
-  const turns: ConversationTurn[] = [];
-  const children = Array.from(container.children);
+  // Last resort: assume alternating children pairs
+  const children = Array.from(container.children).filter(
+    (el) => el.textContent?.trim(),
+  );
 
+  const turns: ConversationTurn[] = [];
   for (let i = 0; i + 1 < children.length; i += 2) {
-    turns.push({
-      human: children[i].textContent?.trim() ?? '',
-      assistant: children[i + 1].textContent?.trim() ?? '',
-    });
+    const human = children[i].textContent?.trim() ?? '';
+    const assistant = children[i + 1].textContent?.trim() ?? '';
+    if (human && assistant) {
+      turns.push({ human, assistant });
+    }
   }
 
   return turns;
@@ -80,18 +153,18 @@ function extractTurnsFallback(): ConversationTurn[] {
 
 /** Extract all conversation turns currently visible in the DOM. */
 export function extractAllTurns(): ConversationTurn[] {
-  return extractTurnsFromSelectors();
+  const turns = extractTurnsFromWrappers();
+  return turns.length > 0 ? turns : extractTurnsFallback();
 }
 
 export function startObserver(onResponseComplete: ResponseCompleteCallback): () => void {
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let lastTurnCount = 0;
+  let stopped = false;
 
   function isGenerating(): boolean {
-    for (const selector of SELECTORS.stopButton.split(', ')) {
-      if (document.querySelector(selector)) return true;
-    }
-    return false;
+    return queryFirst(SELECTORS.stopButton) !== null ||
+      document.querySelector(SELECTORS.streaming) !== null;
   }
 
   function checkForNewResponse() {
@@ -104,43 +177,49 @@ export function startObserver(onResponseComplete: ResponseCompleteCallback): () 
     }
   }
 
-  const container = findConversationContainer();
-  if (!container) {
-    console.warn('[Brainstorm Notebook] Could not find conversation container');
-  }
-
-  // Observe for DOM changes
   const observer = new MutationObserver(() => {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(checkForNewResponse, 1500);
   });
 
-  const target = container ?? document.body;
-  observer.observe(target, {
-    childList: true,
-    subtree: true,
-    characterData: true,
-  });
+  let urlCheckInterval: ReturnType<typeof setInterval> | undefined;
 
-  // Also handle SPA navigation
-  let lastUrl = location.href;
-  const urlCheckInterval = setInterval(() => {
-    if (location.href !== lastUrl) {
-      lastUrl = location.href;
-      lastTurnCount = 0;
-      // Re-attach observer to new container
-      observer.disconnect();
-      const newContainer = findConversationContainer();
-      if (newContainer) {
-        observer.observe(newContainer, { childList: true, subtree: true, characterData: true });
-      }
+  // Wait for the conversation container to appear, then attach observer
+  waitForConversationContainer().then((container) => {
+    if (stopped) return;
+
+    if (!container) {
+      console.warn('[Brainstorm Notebook] Could not find conversation container, observing document.body');
     }
-  }, 1000);
+
+    const target = container ?? document.body;
+    observer.observe(target, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+
+    // Also handle SPA navigation
+    let lastUrl = location.href;
+    urlCheckInterval = setInterval(() => {
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        lastTurnCount = 0;
+        // Re-attach observer to new container
+        observer.disconnect();
+        const newContainer = findConversationContainer();
+        if (newContainer) {
+          observer.observe(newContainer, { childList: true, subtree: true, characterData: true });
+        }
+      }
+    }, 1000);
+  });
 
   // Return cleanup function
   return () => {
+    stopped = true;
     observer.disconnect();
-    clearInterval(urlCheckInterval);
+    if (urlCheckInterval) clearInterval(urlCheckInterval);
     if (debounceTimer) clearTimeout(debounceTimer);
   };
 }

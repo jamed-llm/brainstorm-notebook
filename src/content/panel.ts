@@ -3,7 +3,7 @@ import { layoutGraph, getCanvasHeight } from './graph-layout';
 import { renderGraph, hitTestNode, createRenderState, RenderState } from './graph-canvas';
 import { findAncestors, findDirectParents } from './graph-interaction';
 import { saveGraph, loadGraph } from '../shared/storage';
-import { getConversationId, startObserver, extractAllTurns, ConversationTurn } from './observer';
+import { getConversationId, startObserver, extractAllTurns, findAllMessageElements, ConversationTurn } from './observer';
 import { ExtensionMessage, AnalyzeTurnPayload } from '../shared/messages';
 import panelCss from './panel.css?inline';
 
@@ -265,10 +265,7 @@ function onCanvasMouseLeave(): void {
 }
 
 function scrollToMessage(messageIndex: number): void {
-  // Try to find the message element in Claude's DOM
-  const messages = document.querySelectorAll(
-    '[data-testid="human-turn"], [data-testid="assistant-turn"], [class*="human"], [class*="assistant"]',
-  );
+  const messages = findAllMessageElements();
   // Each turn is 2 messages (human + assistant), so target index * 2
   const targetIdx = messageIndex * 2;
   if (messages[targetIdx]) {

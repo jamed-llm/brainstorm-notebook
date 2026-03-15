@@ -1,9 +1,14 @@
 import { ExtensionMessage, AnalyzeTurnPayload, AnalyzeTurnResult } from '../shared/messages';
-import { loadKeyStore } from '../shared/storage';
+import { loadKeyStore, loadPassphrase, savePassphrase } from '../shared/storage';
 import { decrypt } from '../shared/crypto';
 import { analyzeTurn } from '../shared/claude-api';
 
 let cachedPassphrase: string | null = null;
+
+// Load saved passphrase on startup
+loadPassphrase().then((p) => {
+  if (p) cachedPassphrase = p;
+});
 
 chrome.action.onClicked.addListener((tab) => {
   if (tab.id) {
@@ -62,5 +67,6 @@ async function handleAnalyzeTurn(payload: AnalyzeTurnPayload): Promise<AnalyzeTu
 chrome.runtime.onMessage.addListener((message: { type: string; passphrase?: string }) => {
   if (message.type === 'SET_PASSPHRASE' && message.passphrase) {
     cachedPassphrase = message.passphrase;
+    savePassphrase(message.passphrase);
   }
 });
