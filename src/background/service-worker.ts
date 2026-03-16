@@ -1,9 +1,14 @@
-import { ExtensionMessage, AnalyzeTurnPayload, AnalyzeTurnResult } from '../shared/messages';
-import { loadKeyStore } from '../shared/storage';
+import { ExtensionMessage, AnalyzeTurnPayload, AnalyzeTurnResult, AnalyzeBatchPayload, AnalyzeBatchResult } from '../shared/messages';
+import { loadKeyStore, loadPassphrase, savePassphrase } from '../shared/storage';
 import { decrypt } from '../shared/crypto';
-import { analyzeTurn } from '../shared/claude-api';
+import { analyzeTurn, analyzeBatch } from '../shared/claude-api';
 
 let cachedPassphrase: string | null = null;
+
+// Load saved passphrase on startup
+loadPassphrase().then((p) => {
+  if (p) cachedPassphrase = p;
+});
 
 chrome.action.onClicked.addListener((tab) => {
   if (tab.id) {
@@ -17,7 +22,15 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
       (result) => sendResponse({ type: 'ANALYZE_TURN_RESULT', payload: result }),
       (err) => sendResponse({ type: 'API_ERROR', error: (err as Error).message }),
     );
-    return true; // async response
+    return true;
+  }
+
+  if (message.type === 'ANALYZE_BATCH') {
+    handleAnalyzeBatch(message.payload).then(
+      (result) => sendResponse({ type: 'ANALYZE_BATCH_RESULT', payload: result }),
+      (err) => sendResponse({ type: 'API_ERROR', error: (err as Error).message }),
+    );
+    return true;
   }
 });
 
@@ -28,8 +41,6 @@ async function getDecryptedKeys(): Promise<string[]> {
   }
 
   if (!cachedPassphrase) {
-    // In a real scenario, we'd prompt the user. For now, use a default.
-    // The options page will set this via a message.
     throw new Error('Passphrase not set. Please open extension settings.');
   }
 
@@ -58,9 +69,15 @@ async function handleAnalyzeTurn(payload: AnalyzeTurnPayload): Promise<AnalyzeTu
   return analyzeTurn(payload, keys);
 }
 
+async function handleAnalyzeBatch(payload: AnalyzeBatchPayload): Promise<AnalyzeBatchResult> {
+  const keys = await getDecryptedKeys();
+  return analyzeBatch(payload, keys);
+}
+
 // Listen for passphrase from options page
 chrome.runtime.onMessage.addListener((message: { type: string; passphrase?: string }) => {
   if (message.type === 'SET_PASSPHRASE' && message.passphrase) {
     cachedPassphrase = message.passphrase;
+    savePassphrase(message.passphrase);
   }
 });

@@ -2,7 +2,7 @@ import { render } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 import { ApiKeyEntry, ApiKeyStore } from '../shared/types';
 import { encrypt, generateSalt } from '../shared/crypto';
-import { saveKeyStore, loadKeyStore } from '../shared/storage';
+import { saveKeyStore, loadKeyStore, loadPassphrase } from '../shared/storage';
 import { KeyManager } from './key-manager';
 
 function App() {
@@ -20,6 +20,13 @@ function App() {
       if (store) {
         setKeys(store.keys);
         setSalt(store.salt);
+      }
+    });
+    loadPassphrase().then((p) => {
+      if (p) {
+        setPassphrase(p);
+        setPassphraseSet(true);
+        chrome.runtime.sendMessage({ type: 'SET_PASSPHRASE', passphrase: p });
       }
     });
   }, []);
@@ -109,7 +116,7 @@ function App() {
       <div class="section">
         <h2>Passphrase</h2>
         <p style="font-size:13px;color:#6b7280;margin-bottom:10px">
-          Enter a passphrase to encrypt/decrypt your API keys. Required once per browser session.
+          Enter a passphrase to encrypt/decrypt your API keys. Saved locally.
         </p>
         <div class="passphrase-input">
           <input

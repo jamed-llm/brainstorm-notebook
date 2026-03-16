@@ -19,3 +19,12 @@ export async function loadKeyStore(): Promise<ApiKeyStore | null> {
   const result = await chrome.storage.local.get('apiKeyStore');
   return result.apiKeyStore ?? null;
 }
+
+export async function savePassphrase(passphrase: string): Promise<void> {
+  await chrome.storage.local.set({ passphrase });
+}
+
+export async function loadPassphrase(): Promise<string | null> {
+  const result = await chrome.storage.local.get('passphrase');
+  return result.passphrase ?? null;
+}
