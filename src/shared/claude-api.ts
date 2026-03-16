@@ -1,5 +1,5 @@
-import { AnalyzeTurnPayload, AnalyzeTurnResult } from './messages';
-import { buildNodeAnalysisPrompt } from './prompts';
+import { AnalyzeTurnPayload, AnalyzeTurnResult, AnalyzeBatchPayload, AnalyzeBatchResult } from './messages';
+import { buildNodeAnalysisPrompt, buildBatchAnalysisPrompt, buildMergePrompt, BatchNode, BatchTurn } from './prompts';
 
 type Provider = 'anthropic' | 'openai' | 'gemini';
 
@@ -7,11 +7,10 @@ function detectProvider(apiKey: string): Provider {
   if (apiKey.startsWith('sk-ant-')) return 'anthropic';
   if (apiKey.startsWith('sk-')) return 'openai';
   if (apiKey.startsWith('AIza')) return 'gemini';
-  // Default to OpenAI format as it's the most common sk- pattern
   return 'openai';
 }
 
-async function callAnthropic(prompt: string, apiKey: string): Promise<string> {
+async function callAnthropic(prompt: string, apiKey: string, maxTokens: number): Promise<string> {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -21,7 +20,7 @@ async function callAnthropic(prompt: string, apiKey: string): Promise<string> {
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
+      max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
@@ -34,7 +33,7 @@ async function callAnthropic(prompt: string, apiKey: string): Promise<string> {
   return data.content?.[0]?.text ?? '';
 }
 
-async function callOpenAI(prompt: string, apiKey: string): Promise<string> {
+async function callOpenAI(prompt: string, apiKey: string, maxTokens: number): Promise<string> {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -43,7 +42,7 @@ async function callOpenAI(prompt: string, apiKey: string): Promise<string> {
     },
     body: JSON.stringify({
       model: 'gpt-4o-mini',
-      max_tokens: 300,
+      max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
@@ -56,7 +55,7 @@ async function callOpenAI(prompt: string, apiKey: string): Promise<string> {
   return data.choices?.[0]?.message?.content ?? '';
 }
 
-async function callGemini(prompt: string, apiKey: string): Promise<string> {
+async function callGemini(prompt: string, apiKey: string, maxTokens: number): Promise<string> {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
     {
@@ -64,7 +63,7 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 300 },
+        generationConfig: { maxOutputTokens: maxTokens },
       }),
     },
   );
@@ -77,14 +76,43 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 }
 
-async function callProvider(prompt: string, apiKey: string): Promise<string> {
+async function callProvider(prompt: string, apiKey: string, maxTokens = 300): Promise<string> {
   const provider = detectProvider(apiKey);
   switch (provider) {
-    case 'anthropic': return callAnthropic(prompt, apiKey);
-    case 'openai': return callOpenAI(prompt, apiKey);
-    case 'gemini': return callGemini(prompt, apiKey);
+    case 'anthropic': return callAnthropic(prompt, apiKey, maxTokens);
+    case 'openai': return callOpenAI(prompt, apiKey, maxTokens);
+    case 'gemini': return callGemini(prompt, apiKey, maxTokens);
   }
 }
+
+function callWithFallback(prompt: string, apiKeys: string[], maxTokens = 300): Promise<string> {
+  let lastError: Error | null = null;
+
+  return apiKeys.reduce(
+    (chain, key) =>
+      chain.catch((err) => {
+        lastError = err;
+        return callProvider(prompt, key, maxTokens);
+      }),
+    callProvider(prompt, apiKeys[0], maxTokens),
+  ).catch(() => {
+    throw lastError ?? new Error('No API keys available');
+  });
+}
+
+function parseJsonArray(text: string): unknown[] {
+  const match = text.match(/\[[\s\S]*\]/);
+  if (!match) throw new Error('No JSON array in API response');
+  return JSON.parse(match[0]);
+}
+
+function parseJsonObject(text: string): unknown {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('No JSON in API response');
+  return JSON.parse(match[0]);
+}
+
+// --- Single turn analysis (for live new responses) ---
 
 export async function analyzeTurn(
   payload: AnalyzeTurnPayload,
@@ -96,20 +124,77 @@ export async function analyzeTurn(
     payload.assistantMessage,
   );
 
-  let lastError: Error | null = null;
+  const text = await callWithFallback(prompt, apiKeys);
+  return parseJsonObject(text) as AnalyzeTurnResult;
+}
 
-  for (const key of apiKeys) {
-    try {
-      const text = await callProvider(prompt, key);
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON in API response');
+// --- Batch analysis (for rebuild) ---
 
-      return JSON.parse(jsonMatch[0]) as AnalyzeTurnResult;
-    } catch (err) {
-      lastError = err as Error;
-      continue;
+const CHUNK_SIZE = 20;
+
+export async function analyzeBatch(
+  payload: AnalyzeBatchPayload,
+  apiKeys: string[],
+): Promise<AnalyzeBatchResult> {
+  const allTurns = payload.turns;
+
+  if (allTurns.length <= CHUNK_SIZE) {
+    // Single batch — send all turns at once
+    return analyzeSingleBatch(allTurns, apiKeys);
+  }
+
+  // Chunk the turns and process each chunk, then merge
+  const chunks: BatchTurn[][] = [];
+  for (let i = 0; i < allTurns.length; i += CHUNK_SIZE) {
+    chunks.push(allTurns.slice(i, i + CHUNK_SIZE));
+  }
+
+  const allNodes: BatchNode[] = [];
+  const allEdges: { source: number; target: number; strength: 'strong' | 'middle' | 'thin' }[] = [];
+
+  for (const chunk of chunks) {
+    const result = await analyzeSingleBatch(chunk, apiKeys);
+    for (const node of result.nodes) {
+      allNodes.push(node);
+      for (const parent of node.parents) {
+        allEdges.push({ source: parent.index, target: node.index, strength: parent.strength });
+      }
     }
   }
 
-  throw lastError ?? new Error('No API keys available');
+  // Merge pass: find cross-chunk connections
+  const mergePrompt = buildMergePrompt(
+    allNodes.map((n) => ({ index: n.index, title: n.title, summary: n.summary })),
+    allEdges,
+  );
+
+  try {
+    const maxTokens = Math.max(300, allNodes.length * 30);
+    const mergeText = await callWithFallback(mergePrompt, apiKeys, maxTokens);
+    const newEdges = parseJsonArray(mergeText) as { source: number; target: number; strength: 'strong' | 'middle' | 'thin' }[];
+
+    // Add cross-chunk edges to the relevant target nodes
+    for (const edge of newEdges) {
+      const targetNode = allNodes.find((n) => n.index === edge.target);
+      if (targetNode && !targetNode.parents.some((p) => p.index === edge.source)) {
+        targetNode.parents.push({ index: edge.source, strength: edge.strength });
+      }
+    }
+  } catch {
+    // Merge is best-effort; skip on failure
+  }
+
+  return { nodes: allNodes };
+}
+
+async function analyzeSingleBatch(
+  turns: BatchTurn[],
+  apiKeys: string[],
+): Promise<AnalyzeBatchResult> {
+  const prompt = buildBatchAnalysisPrompt(turns);
+  // Scale max tokens with turn count: ~60 tokens per turn for the response
+  const maxTokens = Math.max(300, turns.length * 60);
+  const text = await callWithFallback(prompt, apiKeys, maxTokens);
+  const nodes = parseJsonArray(text) as BatchNode[];
+  return { nodes };
 }

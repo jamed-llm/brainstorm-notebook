@@ -65,22 +65,6 @@ function findConversationContainer(): Element | null {
   return document.querySelector('main') ?? document.querySelector('[role="main"]');
 }
 
-function waitForConversationContainer(timeoutMs = 10000): Promise<Element | null> {
-  const container = findConversationContainer();
-  if (container) return Promise.resolve(container);
-
-  return new Promise((resolve) => {
-    const start = Date.now();
-    const interval = setInterval(() => {
-      const el = findConversationContainer();
-      if (el || Date.now() - start > timeoutMs) {
-        clearInterval(interval);
-        resolve(el);
-      }
-    }, 500);
-  });
-}
-
 function queryFirstIn(parent: Element, selectors: string[]): Element | null {
   for (const selector of selectors) {
     const el = parent.querySelector(selector);
@@ -157,19 +141,24 @@ export function extractAllTurns(): ConversationTurn[] {
   return turns.length > 0 ? turns : extractTurnsFallback();
 }
 
-export function startObserver(onResponseComplete: ResponseCompleteCallback): () => void {
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let lastTurnCount = 0;
-  let stopped = false;
+export interface ObserverHandle {
+  /** Stop observing. */
+  cleanup: () => void;
+  /** Sync the internal turn count to the current DOM (call after Rebuild). */
+  syncTurnCount: () => void;
+}
+
+export function startObserver(onResponseComplete: ResponseCompleteCallback): ObserverHandle {
+  // Initialize to current turn count so we only fire for truly new turns
+  let lastTurnCount = extractAllTurns().length;
+  let wasGenerating = false;
 
   function isGenerating(): boolean {
     return queryFirst(SELECTORS.stopButton) !== null ||
       document.querySelector(SELECTORS.streaming) !== null;
   }
 
-  function checkForNewResponse() {
-    if (isGenerating()) return;
-
+  function checkTurns() {
     const turns = extractAllTurns();
     if (turns.length > lastTurnCount && turns.length > 0) {
       lastTurnCount = turns.length;
@@ -177,49 +166,39 @@ export function startObserver(onResponseComplete: ResponseCompleteCallback): () 
     }
   }
 
-  const observer = new MutationObserver(() => {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(checkForNewResponse, 1500);
-  });
+  // Poll every 2s — reliable regardless of MutationObserver quirks.
+  // When streaming finishes (wasGenerating transitions to false),
+  // wait a beat for the DOM to settle, then check for new turns.
+  const pollInterval = setInterval(() => {
+    const generating = isGenerating();
 
-  let urlCheckInterval: ReturnType<typeof setInterval> | undefined;
-
-  // Wait for the conversation container to appear, then attach observer
-  waitForConversationContainer().then((container) => {
-    if (stopped) return;
-
-    if (!container) {
-      console.warn('[Brainstorm Notebook] Could not find conversation container, observing document.body');
+    if (wasGenerating && !generating) {
+      // Just finished generating — check after a short delay
+      wasGenerating = false;
+      setTimeout(checkTurns, 800);
+    } else if (!generating) {
+      checkTurns();
     }
 
-    const target = container ?? document.body;
-    observer.observe(target, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
+    wasGenerating = generating;
+  }, 2000);
 
-    // Also handle SPA navigation
-    let lastUrl = location.href;
-    urlCheckInterval = setInterval(() => {
-      if (location.href !== lastUrl) {
-        lastUrl = location.href;
-        lastTurnCount = 0;
-        // Re-attach observer to new container
-        observer.disconnect();
-        const newContainer = findConversationContainer();
-        if (newContainer) {
-          observer.observe(newContainer, { childList: true, subtree: true, characterData: true });
-        }
-      }
-    }, 1000);
-  });
+  // Also handle SPA navigation
+  let lastUrl = location.href;
+  const urlCheckInterval = setInterval(() => {
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+      lastTurnCount = 0;
+    }
+  }, 1000);
 
-  // Return cleanup function
-  return () => {
-    stopped = true;
-    observer.disconnect();
-    if (urlCheckInterval) clearInterval(urlCheckInterval);
-    if (debounceTimer) clearTimeout(debounceTimer);
+  return {
+    cleanup: () => {
+      clearInterval(pollInterval);
+      clearInterval(urlCheckInterval);
+    },
+    syncTurnCount: () => {
+      lastTurnCount = extractAllTurns().length;
+    },
   };
 }

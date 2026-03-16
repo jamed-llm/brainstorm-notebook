@@ -1,7 +1,7 @@
 import { MindNoteGraph, GraphNode } from '../shared/types';
 
-const NODE_WIDTH = 160;
-const NODE_HEIGHT = 60;
+const NODE_WIDTH = 180;
+const NODE_HEIGHT = 50;
 const VERTICAL_GAP = 50;
 const HORIZONTAL_GAP = 30;
 

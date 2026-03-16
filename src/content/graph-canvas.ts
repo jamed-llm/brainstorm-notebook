@@ -25,6 +25,9 @@ export interface RenderState {
   selectedNodeId: string | null;
   ancestorNodeIds: Set<string>;
   ancestorEdgeKeys: Set<string>;
+  panX: number;
+  panY: number;
+  zoom: number;
 }
 
 export function createRenderState(): RenderState {
@@ -33,6 +36,21 @@ export function createRenderState(): RenderState {
     selectedNodeId: null,
     ancestorNodeIds: new Set(),
     ancestorEdgeKeys: new Set(),
+    panX: 0,
+    panY: 0,
+    zoom: 1,
+  };
+}
+
+/** Convert screen-space coordinates to graph-space. */
+export function screenToGraph(
+  sx: number,
+  sy: number,
+  state: RenderState,
+): { x: number; y: number } {
+  return {
+    x: (sx - state.panX) / state.zoom,
+    y: (sy - state.panY) / state.zoom,
   };
 }
 
@@ -54,6 +72,11 @@ export function renderGraph(
   ctx.fillStyle = COLORS.background;
   ctx.fillRect(0, 0, width, height);
 
+  // Apply pan and zoom
+  ctx.save();
+  ctx.translate(state.panX, state.panY);
+  ctx.scale(state.zoom, state.zoom);
+
   const nodeMap = new Map(graph.nodes.map((n) => [n.id, n]));
 
   // Draw edges
@@ -67,9 +90,18 @@ export function renderGraph(
       state.hoveredNodeId === edge.target ||
       state.hoveredNodeId === edge.source;
 
+    const x1 = source.x + NODE_WIDTH / 2;
+    const y1 = source.y + NODE_HEIGHT;
+    const x2 = target.x + NODE_WIDTH / 2;
+    const y2 = target.y;
+
+    // Control point offset: half the vertical distance, clamped for short spans
+    const dy = Math.abs(y2 - y1);
+    const cpOffset = Math.max(20, dy * 0.4);
+
     ctx.beginPath();
-    ctx.moveTo(source.x + NODE_WIDTH / 2, source.y + NODE_HEIGHT);
-    ctx.lineTo(target.x + NODE_WIDTH / 2, target.y);
+    ctx.moveTo(x1, y1);
+    ctx.bezierCurveTo(x1, y1 + cpOffset, x2, y2 - cpOffset, x2, y2);
     ctx.strokeStyle = isHighlighted ? COLORS.edgeHighlight : COLORS[`edge${capitalize(edge.strength)}` as keyof typeof COLORS] as string;
     ctx.lineWidth = isHighlighted ? EDGE_WIDTHS[edge.strength] + 1 : EDGE_WIDTHS[edge.strength];
     ctx.stroke();
@@ -94,16 +126,50 @@ export function renderGraph(
     ctx.lineWidth = isSelected || isAncestor ? 2 : 1;
     ctx.stroke();
 
-    // Node title
+    // Node title — word-wrapped to fit
     ctx.fillStyle = isSelected || isAncestor ? COLORS.nodeAncestor : COLORS.nodeText;
-    ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    const maxChars = 18;
-    const title = node.title.length > maxChars ? node.title.slice(0, maxChars - 1) + '\u2026' : node.title;
-    ctx.fillText(title, node.x + NODE_WIDTH / 2, node.y + NODE_HEIGHT / 2);
+    const padding = 12;
+    const maxWidth = NODE_WIDTH - padding * 2;
+    const lines = wrapText(ctx, node.title, maxWidth);
+    const lineHeight = 14;
+    const totalHeight = lines.length * lineHeight;
+    const startY = node.y + (NODE_HEIGHT - totalHeight) / 2 + lineHeight / 2;
+
+    for (let li = 0; li < lines.length; li++) {
+      ctx.fillText(lines[li], node.x + NODE_WIDTH / 2, startY + li * lineHeight);
+    }
   }
+
+  ctx.restore();
+}
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let current = '';
+
+  for (const word of words) {
+    const test = current ? current + ' ' + word : word;
+    if (ctx.measureText(test).width > maxWidth && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = test;
+    }
+  }
+  if (current) lines.push(current);
+
+  // Limit to 3 lines, truncate last if needed
+  if (lines.length > 3) {
+    lines.length = 3;
+    lines[2] = lines[2].slice(0, -1) + '\u2026';
+  }
+
+  return lines;
 }
 
 function roundRect(

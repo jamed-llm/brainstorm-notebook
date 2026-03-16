@@ -1,9 +1,9 @@
 import { MindNoteGraph, GraphNode, GraphEdge } from '../shared/types';
 import { layoutGraph, getCanvasHeight } from './graph-layout';
-import { renderGraph, hitTestNode, createRenderState, RenderState } from './graph-canvas';
+import { renderGraph, hitTestNode, createRenderState, screenToGraph, RenderState } from './graph-canvas';
 import { findAncestors, findDirectParents } from './graph-interaction';
 import { saveGraph, loadGraph } from '../shared/storage';
-import { getConversationId, startObserver, extractAllTurns, findAllMessageElements, ConversationTurn } from './observer';
+import { getConversationId, startObserver, extractAllTurns, findAllMessageElements, ConversationTurn, ObserverHandle } from './observer';
 import { ExtensionMessage, AnalyzeTurnPayload } from '../shared/messages';
 import panelCss from './panel.css?inline';
 
@@ -16,8 +16,19 @@ let statusEl: HTMLDivElement | null = null;
 let currentGraph: MindNoteGraph | null = null;
 let renderState: RenderState = createRenderState();
 let panelWidth = 400;
-let cleanupObserver: (() => void) | null = null;
+let observerHandle: ObserverHandle | null = null;
 let isRebuilding = false;
+let tooltip: HTMLDivElement | null = null;
+let isDraggingCanvas = false;
+let isDraggingNode = false;
+let draggedNode: GraphNode | null = null;
+let dragStartX = 0;
+let dragStartY = 0;
+let dragStartPanX = 0;
+let dragStartPanY = 0;
+let dragStartNodeX = 0;
+let dragStartNodeY = 0;
+let hasDragged = false;
 
 /** Inject a floating button on the page so users can open the panel without the extension icon. */
 export function injectFloatingButton(): void {
@@ -100,9 +111,18 @@ function createPanel(): void {
   statusEl.className = 'bn-status';
   statusEl.textContent = 'Ready';
 
+  // Tooltip card
+  tooltip = document.createElement('div');
+  tooltip.className = 'bn-tooltip';
+  tooltip.innerHTML = `
+    <div class="bn-tooltip-title"></div>
+    <div class="bn-tooltip-summary"></div>
+  `;
+
   panel.appendChild(resizeHandle);
   panel.appendChild(header);
   panel.appendChild(canvasWrap);
+  panel.appendChild(tooltip);
   panel.appendChild(statusEl);
   shadow.appendChild(panel);
 
@@ -117,8 +137,10 @@ function createPanel(): void {
   closeBtn?.addEventListener('click', destroyPanel);
 
   canvas.addEventListener('mousemove', onCanvasMouseMove);
+  canvas.addEventListener('mousedown', onCanvasMouseDown);
   canvas.addEventListener('click', onCanvasClick);
   canvas.addEventListener('mouseleave', onCanvasMouseLeave);
+  canvas.addEventListener('wheel', onCanvasWheel, { passive: false });
 
   // Push claude.ai content left
   adjustClaudeLayout(true);
@@ -127,13 +149,13 @@ function createPanel(): void {
   initGraph();
 
   // Start observing conversation
-  cleanupObserver = startObserver(onResponseComplete);
+  observerHandle = startObserver(onResponseComplete);
 }
 
 function destroyPanel(): void {
-  if (cleanupObserver) {
-    cleanupObserver();
-    cleanupObserver = null;
+  if (observerHandle) {
+    observerHandle.cleanup();
+    observerHandle = null;
   }
   if (panelHost) {
     panelHost.remove();
@@ -198,6 +220,10 @@ async function initGraph(): Promise<void> {
 function reformat(): void {
   if (!currentGraph || !canvas) return;
   currentGraph = layoutGraph(currentGraph, panelWidth - 20);
+  // Reset pan/zoom to fit content
+  renderState.panX = 0;
+  renderState.panY = 0;
+  renderState.zoom = 1;
   redraw();
 }
 
@@ -205,13 +231,16 @@ function redraw(): void {
   if (!canvas || !currentGraph) return;
 
   const dpr = window.devicePixelRatio || 1;
-  const width = panelWidth - 20;
-  const height = getCanvasHeight(currentGraph);
+  const wrap = canvas.parentElement;
+  const width = wrap ? wrap.clientWidth : panelWidth - 20;
+  const height = wrap ? wrap.clientHeight : 400;
 
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
+  if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+  }
 
   ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -219,30 +248,154 @@ function redraw(): void {
   renderGraph(ctx, currentGraph, renderState, width, height);
 }
 
+function canvasToGraph(e: MouseEvent): { x: number; y: number } {
+  const rect = canvas!.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  return screenToGraph(sx, sy, renderState);
+}
+
+function onCanvasMouseDown(e: MouseEvent): void {
+  if (!canvas || e.button !== 0) return;
+  const { x, y } = canvasToGraph(e);
+  const node = currentGraph ? hitTestNode(currentGraph, x, y) : null;
+
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  hasDragged = false;
+
+  if (node) {
+    // Start node drag
+    isDraggingNode = true;
+    draggedNode = node;
+    dragStartNodeX = node.x;
+    dragStartNodeY = node.y;
+    canvas.style.cursor = 'move';
+  } else {
+    // Start canvas pan
+    isDraggingCanvas = true;
+    dragStartPanX = renderState.panX;
+    dragStartPanY = renderState.panY;
+    canvas.style.cursor = 'grabbing';
+  }
+  e.preventDefault();
+}
+
 function onCanvasMouseMove(e: MouseEvent): void {
   if (!currentGraph || !canvas) return;
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
 
+  const dx = e.clientX - dragStartX;
+  const dy = e.clientY - dragStartY;
+
+  if (isDraggingCanvas) {
+    hasDragged = true;
+    renderState.panX = dragStartPanX + dx;
+    renderState.panY = dragStartPanY + dy;
+    redraw();
+    return;
+  }
+
+  if (isDraggingNode && draggedNode) {
+    hasDragged = true;
+    draggedNode.x = dragStartNodeX + dx / renderState.zoom;
+    draggedNode.y = dragStartNodeY + dy / renderState.zoom;
+    if (tooltip) tooltip.style.display = 'none';
+    canvas.style.cursor = 'move';
+    redraw();
+    return;
+  }
+
+  const { x, y } = canvasToGraph(e);
   const node = hitTestNode(currentGraph, x, y);
   const newHoveredId = node?.id ?? null;
 
   if (newHoveredId !== renderState.hoveredNodeId) {
     renderState.hoveredNodeId = newHoveredId;
-    canvas.style.cursor = newHoveredId ? 'pointer' : 'default';
+    canvas.style.cursor = newHoveredId ? 'pointer' : 'grab';
+    updateTooltip(node, e);
     redraw();
+  } else if (node && tooltip) {
+    positionTooltip(e);
   }
 }
 
-function onCanvasClick(e: MouseEvent): void {
-  if (!currentGraph || !canvas) return;
+function onCanvasWheel(e: WheelEvent): void {
+  if (!canvas) return;
+  e.preventDefault();
+
   const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+  const newZoom = Math.max(0.2, Math.min(3, renderState.zoom * zoomFactor));
+  const scale = newZoom / renderState.zoom;
+
+  // Zoom toward the mouse position
+  renderState.panX = mx - scale * (mx - renderState.panX);
+  renderState.panY = my - scale * (my - renderState.panY);
+  renderState.zoom = newZoom;
+
+  redraw();
+}
+
+function updateTooltip(node: GraphNode | null, e: MouseEvent): void {
+  if (!tooltip) return;
+  if (!node) {
+    tooltip.style.display = 'none';
+    return;
+  }
+  const titleEl = tooltip.querySelector('.bn-tooltip-title') as HTMLDivElement;
+  const summaryEl = tooltip.querySelector('.bn-tooltip-summary') as HTMLDivElement;
+  titleEl.textContent = node.title;
+  summaryEl.textContent = node.summary;
+  summaryEl.scrollTop = 0;
+  tooltip.style.display = 'block';
+  positionTooltip(e);
+}
+
+function positionTooltip(e: MouseEvent): void {
+  if (!tooltip || !panelHost) return;
+  const panelRect = panelHost.getBoundingClientRect();
+  const x = e.clientX - panelRect.left;
+  const y = e.clientY - panelRect.top;
+
+  // Position above cursor, clamped within panel
+  const tooltipWidth = 220;
+  let left = x - tooltipWidth / 2;
+  left = Math.max(8, Math.min(left, panelWidth - tooltipWidth - 8));
+  let top = y - tooltip.offsetHeight - 12;
+  if (top < 8) top = y + 20;
+
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+}
+
+function onCanvasClick(e: MouseEvent): void {
+  const wasDragging = hasDragged;
+
+  // End any drag
+  if (isDraggingNode && draggedNode && hasDragged && currentGraph) {
+    saveGraph(currentGraph);
+  }
+  isDraggingCanvas = false;
+  isDraggingNode = false;
+  draggedNode = null;
+  if (canvas) canvas.style.cursor = 'grab';
+
+  // If we dragged, don't trigger selection
+  if (wasDragging) return;
+
+  if (!currentGraph || !canvas) return;
+  const { x, y } = canvasToGraph(e);
 
   const node = hitTestNode(currentGraph, x, y);
-  if (node) {
+  if (node && node.id === renderState.selectedNodeId) {
+    // Toggle off
+    renderState.selectedNodeId = null;
+    renderState.ancestorNodeIds = new Set();
+    renderState.ancestorEdgeKeys = new Set();
+  } else if (node) {
     renderState.selectedNodeId = node.id;
     const { nodeIds, edgeKeys } = findAncestors(currentGraph, node.id);
     renderState.ancestorNodeIds = nodeIds;
@@ -260,7 +413,15 @@ function onCanvasClick(e: MouseEvent): void {
 }
 
 function onCanvasMouseLeave(): void {
+  if (isDraggingNode && draggedNode && currentGraph) {
+    saveGraph(currentGraph);
+  }
+  isDraggingCanvas = false;
+  isDraggingNode = false;
+  draggedNode = null;
   renderState.hoveredNodeId = null;
+  if (tooltip) tooltip.style.display = 'none';
+  if (canvas) canvas.style.cursor = 'grab';
   redraw();
 }
 
@@ -368,78 +529,67 @@ async function rebuildFromConversation(): Promise<void> {
   currentGraph = { conversationId: convId, nodes: [], edges: [] };
   reformat();
 
-  setStatus(`Rebuilding: 0/${turns.length} turns...`, true);
+  setStatus(`Analyzing ${turns.length} turns...`, true);
 
-  for (let i = 0; i < turns.length; i++) {
-    const turn = turns[i];
-    setStatus(`Rebuilding: ${i + 1}/${turns.length} turns...`, true);
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'ANALYZE_BATCH',
+      payload: {
+        turns: turns.map((t, i) => ({ index: i, human: t.human, assistant: t.assistant })),
+      },
+    } as ExtensionMessage);
 
-    const payload: AnalyzeTurnPayload = {
-      existingNodes: currentGraph!.nodes.map((n) => ({
-        id: n.id,
-        title: n.title,
-        summary: n.summary,
-      })),
-      humanMessage: turn.human,
-      assistantMessage: turn.assistant,
-    };
+    if (response.type === 'API_ERROR') {
+      setStatus(`Error: ${response.error}`, false, true);
+      isRebuilding = false;
+      return;
+    }
 
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'ANALYZE_TURN',
-        payload,
-      } as ExtensionMessage);
+    const result = response.payload;
+    const nodes: GraphNode[] = [];
+    const edges: GraphEdge[] = [];
+    const nodeIdByIndex = new Map<number, string>();
 
-      if (response.type === 'API_ERROR') {
-        setStatus(`Error at turn ${i + 1}: ${response.error}`, false, true);
-        isRebuilding = false;
-        return;
-      }
-
-      const result = response.payload;
-      const newNodeId = `node-${Date.now()}-${i}`;
-
-      const newNode: GraphNode = {
-        id: newNodeId,
-        messageIndex: i,
-        title: result.title,
-        summary: result.summary,
+    // Create all nodes
+    for (const batchNode of result.nodes) {
+      const nodeId = `node-${Date.now()}-${batchNode.index}`;
+      nodeIdByIndex.set(batchNode.index, nodeId);
+      nodes.push({
+        id: nodeId,
+        messageIndex: batchNode.index,
+        title: batchNode.title,
+        summary: batchNode.summary,
         level: 0,
         x: 0,
         y: 0,
-      };
+      });
+    }
 
-      const newEdges: GraphEdge[] = [];
-      for (const parent of result.parents) {
-        let sourceId = parent.nodeId;
-        if (sourceId === 'LAST' && currentGraph!.nodes.length > 0) {
-          sourceId = currentGraph!.nodes[currentGraph!.nodes.length - 1].id;
-        }
-        if (currentGraph!.nodes.some((n) => n.id === sourceId)) {
-          newEdges.push({
+    // Create all edges
+    for (const batchNode of result.nodes) {
+      const targetId = nodeIdByIndex.get(batchNode.index);
+      if (!targetId) continue;
+      for (const parent of batchNode.parents) {
+        const sourceId = nodeIdByIndex.get(parent.index);
+        if (sourceId) {
+          edges.push({
             source: sourceId,
-            target: newNodeId,
+            target: targetId,
             strength: parent.strength,
           });
         }
       }
-
-      currentGraph = {
-        ...currentGraph!,
-        nodes: [...currentGraph!.nodes, newNode],
-        edges: [...currentGraph!.edges, ...newEdges],
-      };
-
-      reformat();
-    } catch (err) {
-      setStatus(`Error at turn ${i + 1}: ${(err as Error).message}`, false, true);
-      isRebuilding = false;
-      return;
     }
+
+    currentGraph = { conversationId: convId, nodes, edges };
+    reformat();
+    await saveGraph(currentGraph);
+    observerHandle?.syncTurnCount();
+    setStatus(`Rebuilt: ${nodes.length} nodes`);
+  } catch (err) {
+    setStatus(`Error: ${(err as Error).message}`, false, true);
   }
 
-  await saveGraph(currentGraph!);
-  setStatus(`Rebuilt: ${currentGraph!.nodes.length} nodes`);
   isRebuilding = false;
 }
 
