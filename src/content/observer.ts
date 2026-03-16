@@ -146,6 +146,8 @@ export interface ObserverHandle {
   cleanup: () => void;
   /** Sync the internal turn count to the current DOM (call after Rebuild). */
   syncTurnCount: () => void;
+  /** Called when URL changes so the panel can re-initialize. */
+  onNavigate: ((convId: string | null) => void) | null;
 }
 
 export function startObserver(onResponseComplete: ResponseCompleteCallback): ObserverHandle {
@@ -189,10 +191,11 @@ export function startObserver(onResponseComplete: ResponseCompleteCallback): Obs
     if (location.href !== lastUrl) {
       lastUrl = location.href;
       lastTurnCount = 0;
+      handle.onNavigate?.(getConversationId());
     }
   }, 1000);
 
-  return {
+  const handle: ObserverHandle = {
     cleanup: () => {
       clearInterval(pollInterval);
       clearInterval(urlCheckInterval);
@@ -200,5 +203,8 @@ export function startObserver(onResponseComplete: ResponseCompleteCallback): Obs
     syncTurnCount: () => {
       lastTurnCount = extractAllTurns().length;
     },
+    onNavigate: null,
   };
+
+  return handle;
 }

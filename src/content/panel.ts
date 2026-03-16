@@ -150,6 +150,27 @@ function createPanel(): void {
 
   // Start observing conversation
   observerHandle = startObserver(onResponseComplete);
+  observerHandle.onNavigate = onNavigate;
+}
+
+async function onNavigate(convId: string | null): Promise<void> {
+  if (!convId) {
+    currentGraph = null;
+    setStatus('Navigate to a conversation to start');
+    return;
+  }
+
+  const existing = await loadGraph(convId);
+  if (existing) {
+    currentGraph = existing;
+  } else {
+    currentGraph = { conversationId: convId, nodes: [], edges: [] };
+  }
+  renderState.selectedNodeId = null;
+  renderState.ancestorNodeIds = new Set();
+  renderState.ancestorEdgeKeys = new Set();
+  reformat();
+  setStatus('Ready');
 }
 
 function destroyPanel(): void {
@@ -438,16 +459,24 @@ async function onResponseComplete(
   turns: ConversationTurn[],
   latestTurn: ConversationTurn,
 ): Promise<void> {
-  if (!currentGraph) return;
+  // If no graph yet (e.g. first message created a new conversation), init it
+  if (!currentGraph) {
+    const convId = getConversationId();
+    if (!convId) return;
+    currentGraph = { conversationId: convId, nodes: [], edges: [] };
+  }
 
   setStatus('Analyzing...', true);
 
+  // Use numeric indices so the LLM can reliably reference existing nodes
+  const existingNodes = currentGraph.nodes.map((n, i) => ({
+    id: String(i),
+    title: n.title,
+    summary: n.summary,
+  }));
+
   const payload: AnalyzeTurnPayload = {
-    existingNodes: currentGraph.nodes.map((n) => ({
-      id: n.id,
-      title: n.title,
-      summary: n.summary,
-    })),
+    existingNodes,
     humanMessage: latestTurn.human,
     assistantMessage: latestTurn.assistant,
   };
@@ -479,14 +508,21 @@ async function onResponseComplete(
 
     const newEdges: GraphEdge[] = [];
     for (const parent of result.parents) {
-      let sourceId = parent.nodeId;
-      if (sourceId === 'LAST' && currentGraph.nodes.length > 0) {
-        sourceId = currentGraph.nodes[currentGraph.nodes.length - 1].id;
+      let sourceNodeId: string | null = null;
+
+      if (parent.nodeId === 'LAST' && currentGraph.nodes.length > 0) {
+        sourceNodeId = currentGraph.nodes[currentGraph.nodes.length - 1].id;
+      } else {
+        // Map numeric index back to real node ID
+        const idx = parseInt(parent.nodeId, 10);
+        if (!isNaN(idx) && idx >= 0 && idx < currentGraph.nodes.length) {
+          sourceNodeId = currentGraph.nodes[idx].id;
+        }
       }
-      // Verify parent exists
-      if (currentGraph.nodes.some((n) => n.id === sourceId)) {
+
+      if (sourceNodeId) {
         newEdges.push({
-          source: sourceId,
+          source: sourceNodeId,
           target: newNodeId,
           strength: parent.strength,
         });
