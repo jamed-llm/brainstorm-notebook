@@ -1,7 +1,7 @@
 import { MindNoteGraph, GraphNode, GraphEdge } from '../shared/types';
 import { layoutGraph, getCanvasHeight } from './graph-layout';
 import { renderGraph, hitTestNode, hitTestEdge, createRenderState, screenToGraph, RenderState } from './graph-canvas';
-import { findAncestors, findDirectParents } from './graph-interaction';
+import { findAncestors, findDirectParents, hasPath } from './graph-interaction';
 import { saveGraph, loadGraph } from '../shared/storage';
 import { getConversationId, startObserver, extractAllTurns, findAllMessageElements, ConversationTurn, ObserverHandle } from './observer';
 import { detectPlatform } from './platforms';
@@ -517,8 +517,9 @@ function onCanvasClick(e: MouseEvent): void {
         const duplicate = currentGraph.edges.some(
           (e) => e.source === connectSourceNode!.id && e.target === node.id,
         );
-        if (duplicate) {
-          setStatus('Edge already exists');
+        const pathExists = hasPath(currentGraph, connectSourceNode.id, node.id);
+        if (duplicate || pathExists) {
+          setStatus('Path already exists');
         } else {
           currentGraph = {
             ...currentGraph,
@@ -685,11 +686,18 @@ async function onResponseComplete(
       }
 
       if (sourceNodeId) {
-        newEdges.push({
-          source: sourceNodeId,
-          target: newNodeId,
-          strength: parent.strength,
-        });
+        // Skip if a path already exists from source to the new node through existing edges + already-added new edges
+        const tempGraph: MindNoteGraph = {
+          ...currentGraph,
+          edges: [...currentGraph.edges, ...newEdges],
+        };
+        if (!hasPath(tempGraph, sourceNodeId, newNodeId)) {
+          newEdges.push({
+            source: sourceNodeId,
+            target: newNodeId,
+            strength: parent.strength,
+          });
+        }
       }
     }
 
