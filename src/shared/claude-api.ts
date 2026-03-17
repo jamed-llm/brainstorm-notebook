@@ -100,16 +100,58 @@ function callWithFallback(prompt: string, apiKeys: string[], maxTokens = 300): P
   });
 }
 
+function cleanJson(raw: string): string {
+  let s = raw
+    .replace(/,\s*([}\]])/g, '$1')       // trailing commas
+    .replace(/[\x00-\x1f]/g, (ch) =>     // unescaped control chars (keep \n \r \t)
+      ch === '\n' || ch === '\r' || ch === '\t' ? ch : '',
+    );
+
+  // Attempt to repair truncated JSON by closing open brackets/braces
+  const opens: string[] = [];
+  let inString = false;
+  let escape = false;
+  for (const ch of s) {
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '[' || ch === '{') opens.push(ch);
+    if (ch === ']' || ch === '}') opens.pop();
+  }
+  // Remove trailing partial value (e.g. truncated string or key)
+  if (inString) {
+    // Close the dangling string, then remove the incomplete entry
+    s = s.replace(/"[^"]*$/, '""');
+  }
+  // Remove trailing comma before we close brackets
+  s = s.replace(/,\s*$/, '');
+  // Close any remaining open brackets/braces
+  while (opens.length) {
+    const open = opens.pop();
+    s += open === '[' ? ']' : '}';
+  }
+  return s;
+}
+
 function parseJsonArray(text: string): unknown[] {
   const match = text.match(/\[[\s\S]*\]/);
   if (!match) throw new Error('No JSON array in API response');
-  return JSON.parse(match[0]);
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    return JSON.parse(cleanJson(match[0]));
+  }
 }
 
 function parseJsonObject(text: string): unknown {
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) throw new Error('No JSON in API response');
-  return JSON.parse(match[0]);
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    return JSON.parse(cleanJson(match[0]));
+  }
 }
 
 // --- Single turn analysis (for live new responses) ---
@@ -192,8 +234,8 @@ async function analyzeSingleBatch(
   apiKeys: string[],
 ): Promise<AnalyzeBatchResult> {
   const prompt = buildBatchAnalysisPrompt(turns);
-  // Scale max tokens with turn count: ~60 tokens per turn for the response
-  const maxTokens = Math.max(300, turns.length * 60);
+  // Scale max tokens with turn count: ~120 tokens per turn for the response
+  const maxTokens = Math.max(600, turns.length * 120);
   const text = await callWithFallback(prompt, apiKeys, maxTokens);
   const nodes = parseJsonArray(text) as BatchNode[];
   return { nodes };
