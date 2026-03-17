@@ -2,6 +2,10 @@
 
 A Chrome extension that generates interactive mind-map graphs from your AI conversations on **Claude** and **ChatGPT**. Each conversation turn becomes a node, with edges showing how topics flow and connect across the discussion.
 
+## Example
+
+![Brainstorm Notebook Example](assets/example.png)
+
 ## Features
 
 - **Auto-generated mind-maps** — Conversation turns are analyzed by an LLM and turned into a graph of connected topics
