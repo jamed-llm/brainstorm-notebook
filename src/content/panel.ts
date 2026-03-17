@@ -95,13 +95,23 @@ function createPanel(): void {
   const header = document.createElement('div');
   header.className = 'bn-header';
   header.innerHTML = `
-    <span>Brainstorm Notebook</span>
-    <div class="bn-header-actions">
-      <button class="bn-btn" id="bn-connect">Connect</button>
-      <button class="bn-btn" id="bn-cut">Cut</button>
-      <button class="bn-btn bn-btn-primary" id="bn-rebuild">Rebuild</button>
-      <button class="bn-btn" id="bn-reformat">Reformat</button>
-      <button class="bn-btn" id="bn-close">Close</button>
+    <div class="bn-header-row">
+      <span>Brainstorm Notebook</span>
+      <div class="bn-header-actions">
+        <button class="bn-btn bn-btn-primary" id="bn-rebuild">Rebuild</button>
+        <button class="bn-btn" id="bn-reformat">Reformat</button>
+        <button class="bn-btn" id="bn-close">Close</button>
+      </div>
+    </div>
+    <div class="bn-header-row bn-toolbar">
+      <span class="bn-btn-tip-wrap">
+        <button class="bn-btn bn-btn-sm" id="bn-connect">Connect</button>
+        <span class="bn-btn-tip">Press to enter connect mode, then click source node and target node to add an edge. Press again or Esc to exit.</span>
+      </span>
+      <span class="bn-btn-tip-wrap">
+        <button class="bn-btn bn-btn-sm" id="bn-cut">Cut</button>
+        <span class="bn-btn-tip">Press to enter cut mode, then hover an edge and click to remove it. Press again or Esc to exit.</span>
+      </span>
     </div>
   `;
 
@@ -291,10 +301,10 @@ function updateModeButtons(): void {
   const connectBtn = shadow?.getElementById('bn-connect');
   const cutBtn = shadow?.getElementById('bn-cut');
   if (connectBtn) {
-    connectBtn.className = renderState.interactionMode === 'connect' ? 'bn-btn bn-btn-active' : 'bn-btn';
+    connectBtn.className = renderState.interactionMode === 'connect' ? 'bn-btn bn-btn-sm bn-btn-active' : 'bn-btn bn-btn-sm';
   }
   if (cutBtn) {
-    cutBtn.className = renderState.interactionMode === 'cut' ? 'bn-btn bn-btn-active' : 'bn-btn';
+    cutBtn.className = renderState.interactionMode === 'cut' ? 'bn-btn bn-btn-sm bn-btn-active' : 'bn-btn bn-btn-sm';
   }
 }
 

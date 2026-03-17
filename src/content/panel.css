@@ -14,14 +14,25 @@
 
 .bn-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
+  flex-direction: column;
   background: #ffffff;
   border-bottom: 1px solid #e5e7eb;
   font-size: 13px;
   font-weight: 600;
   color: #1f2937;
+}
+
+.bn-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+}
+
+.bn-toolbar {
+  padding: 0 14px 8px;
+  gap: 6px;
+  justify-content: flex-start;
 }
 
 .bn-header-actions {
@@ -41,6 +52,37 @@
 
 .bn-btn:hover {
   background: #f3f4f6;
+}
+
+.bn-btn-sm {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.bn-btn-tip-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.bn-btn-tip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 200px;
+  background: #1f2937;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  padding: 6px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.bn-btn-tip-wrap:hover .bn-btn-tip {
+  display: block;
 }
 
 .bn-btn-active {
