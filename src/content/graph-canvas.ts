@@ -28,6 +28,10 @@ export interface RenderState {
   panX: number;
   panY: number;
   zoom: number;
+  interactionMode: 'default' | 'connect' | 'cut';
+  connectSourceId: string | null;
+  rubberBandEnd: { x: number; y: number } | null;
+  hoveredEdgeIndex: number | null;
 }
 
 export function createRenderState(): RenderState {
@@ -39,6 +43,10 @@ export function createRenderState(): RenderState {
     panX: 0,
     panY: 0,
     zoom: 1,
+    interactionMode: 'default',
+    connectSourceId: null,
+    rubberBandEnd: null,
+    hoveredEdgeIndex: null,
   };
 }
 
@@ -80,15 +88,19 @@ export function renderGraph(
   const nodeMap = new Map(graph.nodes.map((n) => [n.id, n]));
 
   // Draw edges
-  for (const edge of graph.edges) {
+  for (let ei = 0; ei < graph.edges.length; ei++) {
+    const edge = graph.edges[ei];
     const source = nodeMap.get(edge.source);
     const target = nodeMap.get(edge.target);
     if (!source || !target) continue;
 
+    const isCutHovered = state.interactionMode === 'cut' && state.hoveredEdgeIndex === ei;
     const isHighlighted =
-      state.ancestorEdgeKeys.has(edgeKey(edge.source, edge.target)) ||
-      state.hoveredNodeId === edge.target ||
-      state.hoveredNodeId === edge.source;
+      !isCutHovered && (
+        state.ancestorEdgeKeys.has(edgeKey(edge.source, edge.target)) ||
+        state.hoveredNodeId === edge.target ||
+        state.hoveredNodeId === edge.source
+      );
 
     const x1 = source.x + NODE_WIDTH / 2;
     const y1 = source.y + NODE_HEIGHT;
@@ -102,8 +114,14 @@ export function renderGraph(
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.bezierCurveTo(x1, y1 + cpOffset, x2, y2 - cpOffset, x2, y2);
-    ctx.strokeStyle = isHighlighted ? COLORS.edgeHighlight : COLORS[`edge${capitalize(edge.strength)}` as keyof typeof COLORS] as string;
-    ctx.lineWidth = isHighlighted ? EDGE_WIDTHS[edge.strength] + 1 : EDGE_WIDTHS[edge.strength];
+
+    if (isCutHovered) {
+      ctx.strokeStyle = '#dc2626';
+      ctx.lineWidth = EDGE_WIDTHS[edge.strength] + 2;
+    } else {
+      ctx.strokeStyle = isHighlighted ? COLORS.edgeHighlight : COLORS[`edge${capitalize(edge.strength)}` as keyof typeof COLORS] as string;
+      ctx.lineWidth = isHighlighted ? EDGE_WIDTHS[edge.strength] + 1 : EDGE_WIDTHS[edge.strength];
+    }
     ctx.stroke();
   }
 
@@ -141,6 +159,37 @@ export function renderGraph(
 
     for (let li = 0; li < lines.length; li++) {
       ctx.fillText(lines[li], node.x + NODE_WIDTH / 2, startY + li * lineHeight);
+    }
+  }
+
+  // Connect mode: highlight source node with green border
+  if (state.connectSourceId) {
+    const srcNode = nodeMap.get(state.connectSourceId);
+    if (srcNode) {
+      ctx.beginPath();
+      roundRect(ctx, srcNode.x, srcNode.y, NODE_WIDTH, NODE_HEIGHT, 8);
+      ctx.strokeStyle = '#16a34a';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+
+    // Rubber-band bezier from source to cursor
+    if (state.rubberBandEnd && srcNode) {
+      const x1 = srcNode.x + NODE_WIDTH / 2;
+      const y1 = srcNode.y + NODE_HEIGHT;
+      const x2 = state.rubberBandEnd.x;
+      const y2 = state.rubberBandEnd.y;
+      const dy = Math.abs(y2 - y1);
+      const cpOffset = Math.max(20, dy * 0.4);
+
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.bezierCurveTo(x1, y1 + cpOffset, x2, y2 - cpOffset, x2, y2);
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = '#16a34a';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
   }
 
@@ -203,6 +252,46 @@ export function hitTestNode(graph: MindNoteGraph, x: number, y: number): GraphNo
       y <= node.y + NODE_HEIGHT
     ) {
       return node;
+    }
+  }
+  return null;
+}
+
+function cubicBezier(p0: number, p1: number, p2: number, p3: number, t: number): number {
+  const mt = 1 - t;
+  return mt * mt * mt * p0 + 3 * mt * mt * t * p1 + 3 * mt * t * t * p2 + t * t * t * p3;
+}
+
+export function hitTestEdge(
+  graph: MindNoteGraph,
+  x: number,
+  y: number,
+  tolerance = 8,
+): { edge: GraphEdge; index: number } | null {
+  const nodeMap = new Map(graph.nodes.map((n) => [n.id, n]));
+
+  for (let i = graph.edges.length - 1; i >= 0; i--) {
+    const edge = graph.edges[i];
+    const source = nodeMap.get(edge.source);
+    const target = nodeMap.get(edge.target);
+    if (!source || !target) continue;
+
+    const x1 = source.x + NODE_WIDTH / 2;
+    const y1 = source.y + NODE_HEIGHT;
+    const x2 = target.x + NODE_WIDTH / 2;
+    const y2 = target.y;
+    const dy = Math.abs(y2 - y1);
+    const cpOffset = Math.max(20, dy * 0.4);
+
+    // Sample points along the cubic bezier and check distance
+    const steps = 24;
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      const bx = cubicBezier(x1, x1, x2, x2, t);
+      const by = cubicBezier(y1, y1 + cpOffset, y2 - cpOffset, y2, t);
+      if (Math.hypot(bx - x, by - y) <= tolerance) {
+        return { edge, index: i };
+      }
     }
   }
   return null;
