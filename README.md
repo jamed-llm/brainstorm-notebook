@@ -1,6 +1,6 @@
 # Brainstorm Notebook
 
-A Chrome extension that generates interactive mind-map graphs from your Claude conversations. Each conversation turn becomes a node, with edges showing how topics flow and connect across the discussion.
+A Chrome extension that generates interactive mind-map graphs from your AI conversations on **Claude** and **ChatGPT**. Each conversation turn becomes a node, with edges showing how topics flow and connect across the discussion.
 
 ## Features
 
@@ -8,14 +8,16 @@ A Chrome extension that generates interactive mind-map graphs from your Claude c
 - **Real-time updates** — New nodes appear automatically as you chat
 - **Batch rebuild** — Analyze an entire conversation at once for accurate cross-topic connections
 - **Multi-provider API support** — Works with Anthropic (Claude), OpenAI, and Google Gemini keys, auto-detected by prefix
+- **Multi-platform support** — Works on both claude.ai and chatgpt.com
 - **Interactive canvas** — Pan, zoom, drag nodes, click to highlight ancestor chains
+- **Manual edge editing** — Connect or cut edges between nodes to refine the graph
 - **Hover tooltips** — See full title and summary for each node
 - **Encrypted key storage** — API keys encrypted at rest with AES-256-GCM via a user-set passphrase
 - **Per-conversation persistence** — Graphs and node positions saved locally
 
 ## How It Works
 
-1. Open a conversation on [claude.ai](https://claude.ai)
+1. Open a conversation on [claude.ai](https://claude.ai) or [chatgpt.com](https://chatgpt.com)
 2. Click the extension icon or the floating button to open the panel
 3. Click **Rebuild** to analyze the full conversation, or let it auto-detect new responses
 4. The LLM reads each turn and decides:
@@ -70,6 +72,8 @@ npm run build
 | Move a node | Drag it |
 | Select a node | Click it (highlights ancestor chain, scrolls chat to that message) |
 | Deselect | Click the same node again, or click empty space |
+| Connect nodes | Click **Connect**, then click two nodes to add an edge |
+| Cut edge | Click **Cut**, then click an edge to remove it |
 | Hover tooltip | Hover over any node |
 | Resize panel | Drag the left edge |
 
@@ -86,6 +90,7 @@ src/
 │   ├── graph-canvas.ts          # Canvas rendering, hit testing, pan/zoom
 │   ├── graph-layout.ts          # Hierarchical level-based layout
 │   ├── graph-interaction.ts     # Ancestor path traversal
+│   ├── platforms.ts             # Platform configs (Claude, ChatGPT)
 │   └── panel.css                # Panel styles (injected into shadow DOM)
 ├── options/
 │   ├── index.html               # Options page entry
@@ -118,6 +123,7 @@ src/
 | `npm run build:sw` | Build service worker only |
 | `npm run build:options` | Build options page only |
 | `npm run build:clean` | Remove and recreate `dist/` |
+| `npm run release` | Full build + package into versioned zip for Chrome Web Store |
 
 ## Graph Edge Types
 

@@ -1,4 +1,6 @@
 node_modules/
 dist/
+releases/
 *.local
 .env
+.DS_Store
