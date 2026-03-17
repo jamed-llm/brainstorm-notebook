@@ -38,6 +38,42 @@ export function findAncestors(
 }
 
 /**
+ * Check whether a directed path exists from `source` to `target` in the graph.
+ */
+export function hasPath(
+  graph: MindNoteGraph,
+  source: string,
+  target: string,
+): boolean {
+  // BFS forward from source
+  const visited = new Set<string>();
+  const queue = [source];
+  visited.add(source);
+
+  // Build forward adjacency: parent -> children
+  const childMap = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    const list = childMap.get(edge.source) ?? [];
+    list.push(edge.target);
+    childMap.set(edge.source, list);
+  }
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const children = childMap.get(current) ?? [];
+    for (const child of children) {
+      if (child === target) return true;
+      if (!visited.has(child)) {
+        visited.add(child);
+        queue.push(child);
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Find directly connected parent node IDs for hover highlight.
  */
 export function findDirectParents(

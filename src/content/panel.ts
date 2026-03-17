@@ -1,9 +1,10 @@
 import { MindNoteGraph, GraphNode, GraphEdge } from '../shared/types';
 import { layoutGraph, getCanvasHeight } from './graph-layout';
-import { renderGraph, hitTestNode, createRenderState, screenToGraph, RenderState } from './graph-canvas';
-import { findAncestors, findDirectParents } from './graph-interaction';
+import { renderGraph, hitTestNode, hitTestEdge, createRenderState, screenToGraph, RenderState } from './graph-canvas';
+import { findAncestors, findDirectParents, hasPath } from './graph-interaction';
 import { saveGraph, loadGraph } from '../shared/storage';
 import { getConversationId, startObserver, extractAllTurns, findAllMessageElements, ConversationTurn, ObserverHandle } from './observer';
+import { detectPlatform } from './platforms';
 import { ExtensionMessage, AnalyzeTurnPayload } from '../shared/messages';
 import panelCss from './panel.css?inline';
 
@@ -29,6 +30,8 @@ let dragStartPanY = 0;
 let dragStartNodeX = 0;
 let dragStartNodeY = 0;
 let hasDragged = false;
+let connectSourceNode: GraphNode | null = null;
+let onKeyDown: ((e: KeyboardEvent) => void) | null = null;
 
 /** Inject a floating button on the page so users can open the panel without the extension icon. */
 export function injectFloatingButton(): void {
@@ -92,11 +95,23 @@ function createPanel(): void {
   const header = document.createElement('div');
   header.className = 'bn-header';
   header.innerHTML = `
-    <span>Brainstorm Notebook</span>
-    <div class="bn-header-actions">
-      <button class="bn-btn bn-btn-primary" id="bn-rebuild">Rebuild</button>
-      <button class="bn-btn" id="bn-reformat">Reformat</button>
-      <button class="bn-btn" id="bn-close">Close</button>
+    <div class="bn-header-row">
+      <span>Brainstorm Notebook</span>
+      <div class="bn-header-actions">
+        <button class="bn-btn bn-btn-primary" id="bn-rebuild">Rebuild</button>
+        <button class="bn-btn" id="bn-reformat">Reformat</button>
+        <button class="bn-btn" id="bn-close">Close</button>
+      </div>
+    </div>
+    <div class="bn-header-row bn-toolbar">
+      <span class="bn-btn-tip-wrap">
+        <button class="bn-btn bn-btn-sm" id="bn-connect">Connect</button>
+        <span class="bn-btn-tip">Press to enter connect mode, then click source node and target node to add an edge. Press again or Esc to exit.</span>
+      </span>
+      <span class="bn-btn-tip-wrap">
+        <button class="bn-btn bn-btn-sm" id="bn-cut">Cut</button>
+        <span class="bn-btn-tip">Press to enter cut mode, then hover an edge and click to remove it. Press again or Esc to exit.</span>
+      </span>
     </div>
   `;
 
@@ -127,14 +142,11 @@ function createPanel(): void {
   shadow.appendChild(panel);
 
   // Event listeners
-  const rebuildBtn = shadow.getElementById('bn-rebuild');
-  rebuildBtn?.addEventListener('click', rebuildFromConversation);
-
-  const reformatBtn = shadow.getElementById('bn-reformat');
-  reformatBtn?.addEventListener('click', reformat);
-
-  const closeBtn = shadow.getElementById('bn-close');
-  closeBtn?.addEventListener('click', destroyPanel);
+  shadow.getElementById('bn-connect')?.addEventListener('click', () => toggleMode('connect'));
+  shadow.getElementById('bn-cut')?.addEventListener('click', () => toggleMode('cut'));
+  shadow.getElementById('bn-rebuild')?.addEventListener('click', rebuildFromConversation);
+  shadow.getElementById('bn-reformat')?.addEventListener('click', reformat);
+  shadow.getElementById('bn-close')?.addEventListener('click', destroyPanel);
 
   canvas.addEventListener('mousemove', onCanvasMouseMove);
   canvas.addEventListener('mousedown', onCanvasMouseDown);
@@ -142,8 +154,16 @@ function createPanel(): void {
   canvas.addEventListener('mouseleave', onCanvasMouseLeave);
   canvas.addEventListener('wheel', onCanvasWheel, { passive: false });
 
-  // Push claude.ai content left
-  adjustClaudeLayout(true);
+  // Escape key exits connect/cut modes
+  onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape' && renderState.interactionMode !== 'default') {
+      exitMode();
+    }
+  };
+  document.addEventListener('keydown', onKeyDown);
+
+  // Push page content left to make room for panel
+  adjustPageLayout(true);
 
   // Load existing graph or create new
   initGraph();
@@ -160,6 +180,17 @@ async function onNavigate(convId: string | null): Promise<void> {
     return;
   }
 
+  // If we already have a graph with a temporary ID (e.g. chatgpt- prefix from homepage),
+  // migrate it to the real conversation ID instead of resetting.
+  if (currentGraph && currentGraph.nodes.length > 0 && currentGraph.conversationId !== convId) {
+    const oldId = currentGraph.conversationId;
+    if (oldId.startsWith('chatgpt-')) {
+      currentGraph = { ...currentGraph, conversationId: convId };
+      await saveGraph(currentGraph);
+      return;
+    }
+  }
+
   const existing = await loadGraph(convId);
   if (existing) {
     currentGraph = existing;
@@ -174,6 +205,11 @@ async function onNavigate(convId: string | null): Promise<void> {
 }
 
 function destroyPanel(): void {
+  if (onKeyDown) {
+    document.removeEventListener('keydown', onKeyDown);
+    onKeyDown = null;
+  }
+  exitMode();
   if (observerHandle) {
     observerHandle.cleanup();
     observerHandle = null;
@@ -185,10 +221,10 @@ function destroyPanel(): void {
     canvas = null;
     ctx = null;
   }
-  adjustClaudeLayout(false);
+  adjustPageLayout(false);
 }
 
-function adjustClaudeLayout(panelOpen: boolean): void {
+function adjustPageLayout(panelOpen: boolean): void {
   const main = document.querySelector('main') ?? document.body;
   if (panelOpen) {
     (main as HTMLElement).style.marginRight = `${panelWidth}px`;
@@ -205,7 +241,7 @@ function setupResize(handle: HTMLDivElement): void {
     const delta = startX - e.clientX;
     panelWidth = Math.max(250, Math.min(800, startWidth + delta));
     if (panelHost) panelHost.style.width = `${panelWidth}px`;
-    adjustClaudeLayout(true);
+    adjustPageLayout(true);
     redraw();
   }
 
@@ -238,7 +274,42 @@ async function initGraph(): Promise<void> {
   reformat();
 }
 
+function toggleMode(mode: 'connect' | 'cut'): void {
+  if (renderState.interactionMode === mode) {
+    exitMode();
+  } else {
+    exitMode();
+    renderState.interactionMode = mode;
+    updateModeButtons();
+    setStatus(mode === 'connect' ? 'Click source node' : 'Click an edge to cut');
+    if (canvas) canvas.style.cursor = 'crosshair';
+  }
+}
+
+function exitMode(): void {
+  renderState.interactionMode = 'default';
+  renderState.connectSourceId = null;
+  renderState.rubberBandEnd = null;
+  renderState.hoveredEdgeIndex = null;
+  connectSourceNode = null;
+  updateModeButtons();
+  if (canvas) canvas.style.cursor = 'grab';
+  redraw();
+}
+
+function updateModeButtons(): void {
+  const connectBtn = shadow?.getElementById('bn-connect');
+  const cutBtn = shadow?.getElementById('bn-cut');
+  if (connectBtn) {
+    connectBtn.className = renderState.interactionMode === 'connect' ? 'bn-btn bn-btn-sm bn-btn-active' : 'bn-btn bn-btn-sm';
+  }
+  if (cutBtn) {
+    cutBtn.className = renderState.interactionMode === 'cut' ? 'bn-btn bn-btn-sm bn-btn-active' : 'bn-btn bn-btn-sm';
+  }
+}
+
 function reformat(): void {
+  if (renderState.interactionMode !== 'default') exitMode();
   if (!currentGraph || !canvas) return;
   currentGraph = layoutGraph(currentGraph, panelWidth - 20);
   // Reset pan/zoom to fit content
@@ -278,6 +349,13 @@ function canvasToGraph(e: MouseEvent): { x: number; y: number } {
 
 function onCanvasMouseDown(e: MouseEvent): void {
   if (!canvas || e.button !== 0) return;
+
+  // In connect/cut mode, clicks are handled in onCanvasClick
+  if (renderState.interactionMode !== 'default') {
+    e.preventDefault();
+    return;
+  }
+
   const { x, y } = canvasToGraph(e);
   const node = currentGraph ? hitTestNode(currentGraph, x, y) : null;
 
@@ -304,6 +382,29 @@ function onCanvasMouseDown(e: MouseEvent): void {
 
 function onCanvasMouseMove(e: MouseEvent): void {
   if (!currentGraph || !canvas) return;
+
+  // Connect mode: update rubber-band line
+  if (renderState.interactionMode === 'connect' && connectSourceNode) {
+    const { x, y } = canvasToGraph(e);
+    renderState.rubberBandEnd = { x, y };
+    const node = hitTestNode(currentGraph, x, y);
+    canvas.style.cursor = node && node.id !== connectSourceNode.id ? 'pointer' : 'crosshair';
+    redraw();
+    return;
+  }
+
+  // Cut mode: highlight nearest edge
+  if (renderState.interactionMode === 'cut') {
+    const { x, y } = canvasToGraph(e);
+    const hit = hitTestEdge(currentGraph, x, y);
+    const newIdx = hit?.index ?? null;
+    if (newIdx !== renderState.hoveredEdgeIndex) {
+      renderState.hoveredEdgeIndex = newIdx;
+      canvas.style.cursor = newIdx !== null ? 'pointer' : 'crosshair';
+      redraw();
+    }
+    return;
+  }
 
   const dx = e.clientX - dragStartX;
   const dy = e.clientY - dragStartY;
@@ -393,22 +494,84 @@ function positionTooltip(e: MouseEvent): void {
 }
 
 function onCanvasClick(e: MouseEvent): void {
+  if (!currentGraph || !canvas) return;
+  const { x, y } = canvasToGraph(e);
+
+  // --- Connect mode ---
+  if (renderState.interactionMode === 'connect') {
+    const node = hitTestNode(currentGraph, x, y);
+    if (!connectSourceNode) {
+      // First click: pick source
+      if (node) {
+        connectSourceNode = node;
+        renderState.connectSourceId = node.id;
+        setStatus('Click target node');
+        redraw();
+      } else {
+        exitMode();
+        setStatus('Ready');
+      }
+    } else {
+      // Second click: pick target and create edge
+      if (node && node.id !== connectSourceNode.id) {
+        const duplicate = currentGraph.edges.some(
+          (e) => e.source === connectSourceNode!.id && e.target === node.id,
+        );
+        const pathExists = hasPath(currentGraph, connectSourceNode.id, node.id);
+        if (duplicate || pathExists) {
+          setStatus('Path already exists');
+        } else {
+          currentGraph = {
+            ...currentGraph,
+            edges: [...currentGraph.edges, {
+              source: connectSourceNode.id,
+              target: node.id,
+              strength: 'middle',
+            }],
+          };
+          saveGraph(currentGraph);
+          setStatus(`${currentGraph.nodes.length} nodes`);
+        }
+      }
+      // Reset connect state (stay in connect mode for chaining)
+      connectSourceNode = null;
+      renderState.connectSourceId = null;
+      renderState.rubberBandEnd = null;
+      setStatus('Click source node');
+      redraw();
+    }
+    return;
+  }
+
+  // --- Cut mode ---
+  if (renderState.interactionMode === 'cut') {
+    if (renderState.hoveredEdgeIndex !== null) {
+      currentGraph = {
+        ...currentGraph,
+        edges: currentGraph.edges.filter((_, i) => i !== renderState.hoveredEdgeIndex),
+      };
+      renderState.hoveredEdgeIndex = null;
+      saveGraph(currentGraph);
+      setStatus(`${currentGraph.nodes.length} nodes`);
+      redraw();
+    }
+    return;
+  }
+
+  // --- Default mode ---
   const wasDragging = hasDragged;
 
   // End any drag
-  if (isDraggingNode && draggedNode && hasDragged && currentGraph) {
+  if (isDraggingNode && draggedNode && hasDragged) {
     saveGraph(currentGraph);
   }
   isDraggingCanvas = false;
   isDraggingNode = false;
   draggedNode = null;
-  if (canvas) canvas.style.cursor = 'grab';
+  canvas.style.cursor = 'grab';
 
   // If we dragged, don't trigger selection
   if (wasDragging) return;
-
-  if (!currentGraph || !canvas) return;
-  const { x, y } = canvasToGraph(e);
 
   const node = hitTestNode(currentGraph, x, y);
   if (node && node.id === renderState.selectedNodeId) {
@@ -422,7 +585,7 @@ function onCanvasClick(e: MouseEvent): void {
     renderState.ancestorNodeIds = nodeIds;
     renderState.ancestorEdgeKeys = edgeKeys;
 
-    // Scroll Claude chat to the corresponding message
+    // Scroll chat to the corresponding message
     scrollToMessage(node.messageIndex);
   } else {
     renderState.selectedNodeId = null;
@@ -448,8 +611,10 @@ function onCanvasMouseLeave(): void {
 
 function scrollToMessage(messageIndex: number): void {
   const messages = findAllMessageElements();
-  // Each turn is 2 messages (human + assistant), so target index * 2
-  const targetIdx = messageIndex * 2;
+  const platform = detectPlatform();
+  // On Claude, each turn is 2 wrappers (human + assistant), so multiply by 2.
+  // On ChatGPT, each <article> is one turn, so user turn index = messageIndex * 2.
+  const targetIdx = platform.name === 'claude' ? messageIndex * 2 : messageIndex * 2;
   if (messages[targetIdx]) {
     messages[targetIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
@@ -521,11 +686,18 @@ async function onResponseComplete(
       }
 
       if (sourceNodeId) {
-        newEdges.push({
-          source: sourceNodeId,
-          target: newNodeId,
-          strength: parent.strength,
-        });
+        // Skip if a path already exists from source to the new node through existing edges + already-added new edges
+        const tempGraph: MindNoteGraph = {
+          ...currentGraph,
+          edges: [...currentGraph.edges, ...newEdges],
+        };
+        if (!hasPath(tempGraph, sourceNodeId, newNodeId)) {
+          newEdges.push({
+            source: sourceNodeId,
+            target: newNodeId,
+            strength: parent.strength,
+          });
+        }
       }
     }
 
@@ -545,6 +717,7 @@ async function onResponseComplete(
 
 async function rebuildFromConversation(): Promise<void> {
   if (isRebuilding) return;
+  if (renderState.interactionMode !== 'default') exitMode();
   isRebuilding = true;
 
   const convId = getConversationId();

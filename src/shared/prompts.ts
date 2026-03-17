@@ -31,7 +31,8 @@ Rules for deciding parents:
 - Use "strong" for direct continuation, "middle" for same topic, "thin" for loosely related.
 - If this is an entirely new topic with no connection to ANY existing node, parents MUST be an empty array []. This creates a new root node at the top level of the graph. Do not force a connection — only connect nodes that are genuinely related in topic or context.
 - Do not include more than 3 parents total.
-- It is completely fine and expected to have multiple root nodes (empty parents). A conversation often covers several unrelated topics.`;
+- It is completely fine and expected to have multiple root nodes (empty parents). A conversation often covers several unrelated topics.
+- IMPORTANT: Write the title and summary in the same language as the conversation. If the conversation is in Chinese, write in Chinese; if in French, write in French; etc.`;
 }
 
 export interface BatchTurn {
@@ -73,7 +74,8 @@ Rules:
 - If a turn starts an entirely new topic with no connection to ANY prior turn, parents MUST be an empty array []. Do not force connections.
 - It is completely fine and expected to have multiple root nodes (empty parents). Conversations often cover several unrelated topics.
 - Max 3 parents per node.
-- Every turn in the conversation must appear exactly once in the output array, in order.`;
+- Every turn in the conversation must appear exactly once in the output array, in order.
+- IMPORTANT: Write the title and summary in the same language as the conversation. If the conversation is in Chinese, write in Chinese; if in French, write in French; etc.`;
 }
 
 export function buildMergePrompt(
