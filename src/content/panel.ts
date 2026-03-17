@@ -4,6 +4,7 @@ import { renderGraph, hitTestNode, createRenderState, screenToGraph, RenderState
 import { findAncestors, findDirectParents } from './graph-interaction';
 import { saveGraph, loadGraph } from '../shared/storage';
 import { getConversationId, startObserver, extractAllTurns, findAllMessageElements, ConversationTurn, ObserverHandle } from './observer';
+import { detectPlatform } from './platforms';
 import { ExtensionMessage, AnalyzeTurnPayload } from '../shared/messages';
 import panelCss from './panel.css?inline';
 
@@ -142,8 +143,8 @@ function createPanel(): void {
   canvas.addEventListener('mouseleave', onCanvasMouseLeave);
   canvas.addEventListener('wheel', onCanvasWheel, { passive: false });
 
-  // Push claude.ai content left
-  adjustClaudeLayout(true);
+  // Push page content left to make room for panel
+  adjustPageLayout(true);
 
   // Load existing graph or create new
   initGraph();
@@ -158,6 +159,17 @@ async function onNavigate(convId: string | null): Promise<void> {
     currentGraph = null;
     setStatus('Navigate to a conversation to start');
     return;
+  }
+
+  // If we already have a graph with a temporary ID (e.g. chatgpt- prefix from homepage),
+  // migrate it to the real conversation ID instead of resetting.
+  if (currentGraph && currentGraph.nodes.length > 0 && currentGraph.conversationId !== convId) {
+    const oldId = currentGraph.conversationId;
+    if (oldId.startsWith('chatgpt-')) {
+      currentGraph = { ...currentGraph, conversationId: convId };
+      await saveGraph(currentGraph);
+      return;
+    }
   }
 
   const existing = await loadGraph(convId);
@@ -185,10 +197,10 @@ function destroyPanel(): void {
     canvas = null;
     ctx = null;
   }
-  adjustClaudeLayout(false);
+  adjustPageLayout(false);
 }
 
-function adjustClaudeLayout(panelOpen: boolean): void {
+function adjustPageLayout(panelOpen: boolean): void {
   const main = document.querySelector('main') ?? document.body;
   if (panelOpen) {
     (main as HTMLElement).style.marginRight = `${panelWidth}px`;
@@ -205,7 +217,7 @@ function setupResize(handle: HTMLDivElement): void {
     const delta = startX - e.clientX;
     panelWidth = Math.max(250, Math.min(800, startWidth + delta));
     if (panelHost) panelHost.style.width = `${panelWidth}px`;
-    adjustClaudeLayout(true);
+    adjustPageLayout(true);
     redraw();
   }
 
@@ -448,8 +460,10 @@ function onCanvasMouseLeave(): void {
 
 function scrollToMessage(messageIndex: number): void {
   const messages = findAllMessageElements();
-  // Each turn is 2 messages (human + assistant), so target index * 2
-  const targetIdx = messageIndex * 2;
+  const platform = detectPlatform();
+  // On Claude, each turn is 2 wrappers (human + assistant), so multiply by 2.
+  // On ChatGPT, each <article> is one turn, so user turn index = messageIndex * 2.
+  const targetIdx = platform.name === 'claude' ? messageIndex * 2 : messageIndex * 2;
   if (messages[targetIdx]) {
     messages[targetIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
