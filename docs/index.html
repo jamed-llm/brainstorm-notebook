@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brainstorm Notebook - Chrome Extension</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #1a1a2e;
+      background: #f8f9fa;
+      line-height: 1.6;
+    }
+    .container { max-width: 800px; margin: 0 auto; padding: 0 24px; }
+    header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 60px 0 48px;
+      text-align: center;
+    }
+    header h1 { font-size: 2.4rem; margin-bottom: 12px; }
+    header p { font-size: 1.1rem; opacity: 0.9; max-width: 600px; margin: 0 auto; }
+    .badge {
+      display: inline-block;
+      margin-top: 24px;
+      padding: 10px 24px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 24px;
+      font-size: 0.9rem;
+    }
+    .badge a { color: white; text-decoration: none; font-weight: 600; }
+    main { padding: 48px 0; }
+    section { margin-bottom: 40px; }
+    h2 { font-size: 1.5rem; margin-bottom: 16px; color: #333; }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 8px; }
+    .platforms {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .platform {
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-weight: 500;
+    }
+    .support-section {
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 32px;
+      text-align: center;
+    }
+    .support-section p { margin-bottom: 16px; color: #555; }
+    .bmc-btn {
+      display: inline-block;
+      padding: 12px 28px;
+      background: #FFDD00;
+      color: #000;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: opacity 0.2s;
+    }
+    .bmc-btn:hover { opacity: 0.85; }
+    footer {
+      border-top: 1px solid #e0e0e0;
+      padding: 24px 0;
+      text-align: center;
+      font-size: 0.85rem;
+      color: #888;
+    }
+    footer a { color: #667eea; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>Brainstorm Notebook</h1>
+      <p>A Chrome extension that generates interactive mind-map graphs from your AI conversations on Claude, ChatGPT, and Gemini.</p>
+      <div class="badge">
+        <a href="https://github.com/jamed-llm/brainstorm-notebook">View on GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section>
+      <h2>What It Does</h2>
+      <p>Each conversation turn becomes a node in an interactive mind-map, with edges showing how topics flow and connect across your discussion. Brainstorm Notebook helps you visualize the structure of your AI conversations in real time.</p>
+    </section>
+
+    <section>
+      <h2>Features</h2>
+      <ul>
+        <li>Auto-generated mind-maps from conversation turns</li>
+        <li>Real-time updates as you chat</li>
+        <li>Batch rebuild for entire conversations</li>
+        <li>Interactive canvas with pan, zoom, and drag</li>
+        <li>Manual edge editing (connect or cut)</li>
+        <li>Encrypted API key storage (AES-256-GCM)</li>
+        <li>Per-conversation graph persistence</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Supported Platforms</h2>
+      <div class="platforms">
+        <div class="platform">Claude (claude.ai)</div>
+        <div class="platform">ChatGPT (chatgpt.com)</div>
+        <div class="platform">Gemini (gemini.google.com)</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Supported API Providers</h2>
+      <div class="platforms">
+        <div class="platform">Anthropic (Claude)</div>
+        <div class="platform">OpenAI (GPT)</div>
+        <div class="platform">Google (Gemini)</div>
+      </div>
+    </section>
+
+    <section class="support-section">
+      <h2>Support This Project</h2>
+      <p>If you find Brainstorm Notebook useful, consider buying me a coffee to support ongoing development.</p>
+      <!-- TODO: Replace [YOUR_BMC_USERNAME] with your Buy Me a Coffee username -->
+      <a class="bmc-btn" href="https://www.buymeacoffee.com/[YOUR_BMC_USERNAME]" target="_blank" rel="noopener">Buy Me a Coffee</a>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>
+        <a href="https://github.com/jamed-llm/brainstorm-notebook">GitHub</a>
+        &nbsp;&middot;&nbsp;
+        <a href="./tokushoho.html">特定商取引法に基づく表記</a>
+      </p>
+      <p style="margin-top: 8px;">&copy; 2025 Brainstorm Notebook</p>
+    </div>
+  </footer>
+</body>
+</html>
