@@ -173,10 +173,10 @@ function createPanel(): void {
       </span>
       <span class="bn-btn-tip-wrap bn-toggle">
         <span class="bn-toggle-label">LLM</span>
-        <span class="bn-toggle-switch">
+        <label class="bn-toggle-switch">
           <input type="checkbox" id="bn-llm-toggle" />
           <span class="bn-toggle-slider"></span>
-        </span>
+        </label>
         <span class="bn-btn-tip">When ON, an LLM analyzes each turn to generate titles, summaries and semantic connections. When OFF, titles and summaries are extracted from the text directly, and connections are based on keyword similarity.</span>
       </span>
     </div>
