@@ -2,7 +2,7 @@ import { MindNoteGraph, GraphNode, GraphEdge } from '../shared/types';
 import { layoutGraph, getCanvasHeight } from './graph-layout';
 import { renderGraph, hitTestNode, hitTestEdge, createRenderState, screenToGraph, RenderState } from './graph-canvas';
 import { findAncestors, findDirectParents, hasPath } from './graph-interaction';
-import { saveGraph, loadGraph, saveLlmMode, loadLlmMode } from '../shared/storage';
+import { saveGraph, loadGraph, saveLlmMode, loadLlmMode, getGraphCacheStats, loadSupportMilestone, saveSupportMilestone } from '../shared/storage';
 import { getConversationId, startObserver, extractAllTurns, findAllMessageElements, ConversationTurn, ObserverHandle } from './observer';
 import { detectPlatform } from './platforms';
 import { NODE_WIDTH, NODE_HEIGHT } from './graph-layout';
@@ -201,7 +201,7 @@ function createPanel(): void {
   supportLink.href = 'https://www.buymeacoffee.com/godlucky';
   supportLink.target = '_blank';
   supportLink.rel = 'noopener noreferrer';
-  supportLink.textContent = 'Support';
+  supportLink.textContent = '\u2615';
 
   statusBar.appendChild(statusEl);
   statusBar.appendChild(supportLink);
@@ -222,10 +222,25 @@ function createPanel(): void {
     hideTooltip();
   });
 
+  // Support popup
+  const supportPopup = document.createElement('div');
+  supportPopup.className = 'bn-support-popup';
+  supportPopup.innerHTML = `
+    <div class="bn-support-popup-text">Like this app? Support me to do better!</div>
+    <div class="bn-support-popup-actions">
+      <a class="bn-btn bn-btn-primary" href="https://www.buymeacoffee.com/godlucky" target="_blank" rel="noopener noreferrer">\u2615 Buy me a coffee</a>
+      <button class="bn-btn bn-support-popup-dismiss">Later</button>
+    </div>
+  `;
+  supportPopup.querySelector('.bn-support-popup-dismiss')?.addEventListener('click', () => {
+    supportPopup.style.display = 'none';
+  });
+
   panel.appendChild(resizeHandle);
   panel.appendChild(header);
   panel.appendChild(canvasWrap);
   panel.appendChild(tooltip);
+  panel.appendChild(supportPopup);
   panel.appendChild(statusBar);
   shadow.appendChild(panel);
 
@@ -288,6 +303,7 @@ async function onNavigate(convId: string | null): Promise<void> {
     if (oldId.startsWith('chatgpt-')) {
       currentGraph = { ...currentGraph, conversationId: convId };
       await saveGraph(currentGraph);
+    await checkSupportMilestone();
       return;
     }
   }
@@ -651,7 +667,7 @@ function onCanvasClick(e: MouseEvent): void {
               strength: 'middle',
             }],
           };
-          saveGraph(currentGraph);
+          saveGraph(currentGraph).then(checkSupportMilestone);
           setStatus(`${currentGraph.nodes.length} nodes`);
         }
       }
@@ -673,7 +689,7 @@ function onCanvasClick(e: MouseEvent): void {
         edges: currentGraph.edges.filter((_, i) => i !== renderState.hoveredEdgeIndex),
       };
       renderState.hoveredEdgeIndex = null;
-      saveGraph(currentGraph);
+      saveGraph(currentGraph).then(checkSupportMilestone);
       setStatus(`${currentGraph.nodes.length} nodes`);
       redraw();
     }
@@ -685,7 +701,7 @@ function onCanvasClick(e: MouseEvent): void {
 
   // End any drag
   if (isDraggingNode && draggedNode && hasDragged) {
-    saveGraph(currentGraph);
+    saveGraph(currentGraph).then(checkSupportMilestone);
   }
   isDraggingCanvas = false;
   isDraggingNode = false;
@@ -720,7 +736,7 @@ function onCanvasClick(e: MouseEvent): void {
 
 function onCanvasMouseLeave(): void {
   if (isDraggingNode && draggedNode && currentGraph) {
-    saveGraph(currentGraph);
+    saveGraph(currentGraph).then(checkSupportMilestone);
   }
   isDraggingCanvas = false;
   isDraggingNode = false;
@@ -861,6 +877,7 @@ async function onResponseComplete(
 
     reformat();
     await saveGraph(currentGraph);
+    await checkSupportMilestone();
     setStatus(`${currentGraph.nodes.length} nodes`);
   } catch (err) {
     setStatus((err as Error).message, false, true);
@@ -984,6 +1001,7 @@ async function rebuildFromConversation(): Promise<void> {
     currentGraph = { conversationId: convId, nodes, edges };
     reformat();
     await saveGraph(currentGraph);
+    await checkSupportMilestone();
     observerHandle?.syncTurnCount();
     setStatus(`Rebuilt: ${nodes.length} nodes`);
   } catch (err) {
@@ -1004,5 +1022,18 @@ function setStatus(text: string, loading = false, error = false): void {
   } else {
     statusEl.className = 'bn-status';
     statusEl.textContent = text;
+  }
+}
+
+async function checkSupportMilestone(): Promise<void> {
+  if (!shadow) return;
+  const stats = await getGraphCacheStats();
+  const currentKB = Math.floor(stats.sizeBytes / 1024);
+  if (currentKB < 1) return;
+  const lastMilestone = await loadSupportMilestone();
+  if (currentKB > lastMilestone) {
+    await saveSupportMilestone(currentKB);
+    const popup = shadow.querySelector('.bn-support-popup') as HTMLElement | null;
+    if (popup) popup.style.display = 'block';
   }
 }
