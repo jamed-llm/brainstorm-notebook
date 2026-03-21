@@ -85,7 +85,8 @@
   display: block;
 }
 
-.bn-toggle .bn-btn-tip {
+.bn-toggle .bn-btn-tip,
+.bn-btn-tip-right {
   left: auto;
   right: 0;
 }
@@ -153,6 +154,20 @@
 
 .bn-btn-active:hover {
   background: #bfdbfe;
+}
+
+.bn-btn-coffee {
+  background: #FFDD00;
+  color: #6F4E37;
+  border-color: #FFDD00;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bn-btn-coffee:hover {
+  background: #f5d000;
 }
 
 .bn-btn-primary {
@@ -237,17 +252,7 @@
   color: #6b7280;
 }
 
-.bn-support-link {
-  text-decoration: none;
-  font-size: 14px;
-  flex-shrink: 0;
-  opacity: 0.5;
-  transition: opacity 0.2s;
-}
 
-.bn-support-link:hover {
-  opacity: 1;
-}
 
 .bn-error {
   color: #dc2626;

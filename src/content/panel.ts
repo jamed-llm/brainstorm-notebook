@@ -95,26 +95,83 @@ function scoreToStrength(score: number): 'strong' | 'middle' | 'thin' | null {
 /** Inject a floating button on the page so users can open the panel without the extension icon. */
 export function injectFloatingButton(): void {
   if (floatingBtn) return;
+
+  // Wrapper holds both buttons so hover area spans both
+  const fabWrap = document.createElement('div');
+  fabWrap.id = 'brainstorm-notebook-fab-wrap';
+  fabWrap.style.cssText = `
+    position: fixed; bottom: 20px; right: 20px; z-index: 999998;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  `;
+
+  // Coffee button (hidden by default, slides up on hover)
+  const coffeeFab = document.createElement('a');
+  coffeeFab.id = 'brainstorm-notebook-coffee';
+  coffeeFab.href = 'https://www.buymeacoffee.com/godlucky';
+  coffeeFab.target = '_blank';
+  coffeeFab.rel = 'noopener noreferrer';
+  coffeeFab.textContent = '\u2615';
+  coffeeFab.style.cssText = `
+    width: 44px; height: 44px; border-radius: 50%;
+    background: #FFDD00; color: #6F4E37; font-size: 22px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    text-decoration: none; user-select: none;
+    opacity: 0; transform: translateY(20px) scale(0.6);
+    transition: opacity 0.25s, transform 0.25s;
+    pointer-events: none; position: relative;
+  `;
+  const coffeeTip = document.createElement('div');
+  coffeeTip.textContent = 'Help me do more!';
+  coffeeTip.style.cssText = `
+    position: absolute; right: 52px; top: 50%; transform: translateY(-50%);
+    white-space: nowrap; background: #1f2937; color: #fff;
+    font-size: 12px; padding: 5px 10px; border-radius: 4px;
+    pointer-events: none; opacity: 0; transition: opacity 0.2s;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  `;
+  coffeeFab.appendChild(coffeeTip);
+  coffeeFab.addEventListener('mouseenter', () => {
+    coffeeFab.style.transform = 'translateY(0) scale(1.1)';
+    coffeeTip.style.opacity = '1';
+  });
+  coffeeFab.addEventListener('mouseleave', () => {
+    coffeeFab.style.transform = 'translateY(0) scale(1)';
+    coffeeTip.style.opacity = '0';
+  });
+
+  // Brain button
   floatingBtn = document.createElement('div');
   floatingBtn.id = 'brainstorm-notebook-fab';
   floatingBtn.title = 'Brainstorm Notebook';
   floatingBtn.textContent = '\uD83E\uDDE0';
   floatingBtn.style.cssText = `
-    position: fixed; bottom: 20px; right: 20px; z-index: 999998;
     width: 44px; height: 44px; border-radius: 50%;
     background: #2563eb; color: white; font-size: 22px;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
     border: none; user-select: none; transition: transform 0.15s;
   `;
-  floatingBtn.addEventListener('mouseenter', () => {
+  floatingBtn.addEventListener('click', togglePanel);
+
+  // Show/hide coffee on wrapper hover
+  fabWrap.addEventListener('mouseenter', () => {
+    coffeeFab.style.opacity = '1';
+    coffeeFab.style.transform = 'translateY(0) scale(1)';
+    coffeeFab.style.pointerEvents = 'auto';
     if (floatingBtn) floatingBtn.style.transform = 'scale(1.1)';
   });
-  floatingBtn.addEventListener('mouseleave', () => {
+  fabWrap.addEventListener('mouseleave', () => {
+    coffeeFab.style.opacity = '0';
+    coffeeFab.style.transform = 'translateY(20px) scale(0.6)';
+    coffeeFab.style.pointerEvents = 'none';
+    coffeeTip.style.opacity = '0';
     if (floatingBtn) floatingBtn.style.transform = 'scale(1)';
   });
-  floatingBtn.addEventListener('click', togglePanel);
-  document.body.appendChild(floatingBtn);
+
+  fabWrap.appendChild(coffeeFab);
+  fabWrap.appendChild(floatingBtn);
+  document.body.appendChild(fabWrap);
 }
 
 export function togglePanel(): void {
@@ -159,6 +216,10 @@ function createPanel(): void {
       <div class="bn-header-actions">
         <button class="bn-btn bn-btn-primary" id="bn-rebuild">Rebuild</button>
         <button class="bn-btn" id="bn-reformat">Reformat</button>
+        <span class="bn-btn-tip-wrap">
+          <a class="bn-btn bn-btn-coffee" id="bn-coffee" href="https://www.buymeacoffee.com/godlucky" target="_blank" rel="noopener noreferrer">&#9749;</a>
+          <span class="bn-btn-tip bn-btn-tip-right">Help me do more!</span>
+        </span>
         <button class="bn-btn" id="bn-close">Close</button>
       </div>
     </div>
@@ -196,15 +257,7 @@ function createPanel(): void {
   statusEl.className = 'bn-status';
   statusEl.textContent = 'Ready';
 
-  const supportLink = document.createElement('a');
-  supportLink.className = 'bn-support-link';
-  supportLink.href = 'https://www.buymeacoffee.com/godlucky';
-  supportLink.target = '_blank';
-  supportLink.rel = 'noopener noreferrer';
-  supportLink.textContent = '\u2615';
-
   statusBar.appendChild(statusEl);
-  statusBar.appendChild(supportLink);
 
   // Tooltip card
   tooltip = document.createElement('div');
