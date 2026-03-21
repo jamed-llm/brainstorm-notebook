@@ -5,6 +5,7 @@ import { findAncestors, findDirectParents, hasPath } from './graph-interaction';
 import { saveGraph, loadGraph, saveLlmMode, loadLlmMode } from '../shared/storage';
 import { getConversationId, startObserver, extractAllTurns, findAllMessageElements, ConversationTurn, ObserverHandle } from './observer';
 import { detectPlatform } from './platforms';
+import { NODE_WIDTH, NODE_HEIGHT } from './graph-layout';
 import { ExtensionMessage, AnalyzeTurnPayload } from '../shared/messages';
 import panelCss from './panel.css?inline';
 
@@ -33,6 +34,8 @@ let hasDragged = false;
 let connectSourceNode: GraphNode | null = null;
 let onKeyDown: ((e: KeyboardEvent) => void) | null = null;
 let llmEnabled = true;
+let tooltipHovered = false;
+let tooltipHideTimer: ReturnType<typeof setTimeout> | null = null;
 /** Keyword sets for each node (keyed by node ID) – used in non-LLM mode. */
 let nodeKeywords = new Map<string, Set<string>>();
 
@@ -168,13 +171,14 @@ function createPanel(): void {
         <button class="bn-btn bn-btn-sm" id="bn-cut">Cut</button>
         <span class="bn-btn-tip">Press to enter cut mode, then hover an edge and click to remove it. Press again or Esc to exit.</span>
       </span>
-      <label class="bn-toggle">
+      <span class="bn-btn-tip-wrap bn-toggle">
         <span class="bn-toggle-label">LLM</span>
         <span class="bn-toggle-switch">
           <input type="checkbox" id="bn-llm-toggle" />
           <span class="bn-toggle-slider"></span>
         </span>
-      </label>
+        <span class="bn-btn-tip">When ON, an LLM analyzes each turn to generate titles, summaries and semantic connections. When OFF, titles and summaries are extracted from the text directly, and connections are based on keyword similarity.</span>
+      </span>
     </div>
   `;
 
@@ -196,6 +200,14 @@ function createPanel(): void {
     <div class="bn-tooltip-title"></div>
     <div class="bn-tooltip-summary"></div>
   `;
+  tooltip.addEventListener('mouseenter', () => {
+    tooltipHovered = true;
+    if (tooltipHideTimer) { clearTimeout(tooltipHideTimer); tooltipHideTimer = null; }
+  });
+  tooltip.addEventListener('mouseleave', () => {
+    tooltipHovered = false;
+    hideTooltip();
+  });
 
   panel.appendChild(resizeHandle);
   panel.appendChild(header);
@@ -510,10 +522,8 @@ function onCanvasMouseMove(e: MouseEvent): void {
   if (newHoveredId !== renderState.hoveredNodeId) {
     renderState.hoveredNodeId = newHoveredId;
     canvas.style.cursor = newHoveredId ? 'pointer' : 'grab';
-    updateTooltip(node, e);
+    updateTooltip(node);
     redraw();
-  } else if (node && tooltip) {
-    positionTooltip(e);
   }
 }
 
@@ -537,33 +547,56 @@ function onCanvasWheel(e: WheelEvent): void {
   redraw();
 }
 
-function updateTooltip(node: GraphNode | null, e: MouseEvent): void {
+function hideTooltip(): void {
+  if (tooltipHovered) return;
+  // Short delay so the mouse can travel from canvas to tooltip
+  tooltipHideTimer = setTimeout(() => {
+    if (!tooltipHovered && tooltip) {
+      tooltip.style.display = 'none';
+      renderState.hoveredNodeId = null;
+      redraw();
+    }
+    tooltipHideTimer = null;
+  }, 100);
+}
+
+function updateTooltip(node: GraphNode | null): void {
   if (!tooltip) return;
   if (!node) {
-    tooltip.style.display = 'none';
+    if (!tooltipHovered) hideTooltip();
     return;
   }
+  if (tooltipHideTimer) { clearTimeout(tooltipHideTimer); tooltipHideTimer = null; }
   const titleEl = tooltip.querySelector('.bn-tooltip-title') as HTMLDivElement;
   const summaryEl = tooltip.querySelector('.bn-tooltip-summary') as HTMLDivElement;
   titleEl.textContent = node.title;
   summaryEl.textContent = node.summary;
   summaryEl.scrollTop = 0;
   tooltip.style.display = 'block';
-  positionTooltip(e);
+  positionTooltipOnNode(node);
 }
 
-function positionTooltip(e: MouseEvent): void {
-  if (!tooltip || !panelHost) return;
-  const panelRect = panelHost.getBoundingClientRect();
-  const x = e.clientX - panelRect.left;
-  const y = e.clientY - panelRect.top;
+/** Position the tooltip anchored to the node, overlapping slightly so the mouse can reach it. */
+function positionTooltipOnNode(node: GraphNode): void {
+  if (!tooltip || !panelHost || !canvas) return;
 
-  // Position above cursor, clamped within panel
+  const canvasRect = canvas.getBoundingClientRect();
+  const panelRect = panelHost.getBoundingClientRect();
+
+  // Convert node graph coords to screen coords relative to panel
+  const nodeScreenX = node.x * renderState.zoom + renderState.panX + canvasRect.left - panelRect.left;
+  const nodeScreenY = node.y * renderState.zoom + renderState.panY + canvasRect.top - panelRect.top;
+  const nodeScreenW = NODE_WIDTH * renderState.zoom;
+  const nodeScreenH = NODE_HEIGHT * renderState.zoom;
+
   const tooltipWidth = 220;
-  let left = x - tooltipWidth / 2;
+  // Center tooltip horizontally on the node
+  let left = nodeScreenX + nodeScreenW / 2 - tooltipWidth / 2;
   left = Math.max(8, Math.min(left, panelWidth - tooltipWidth - 8));
-  let top = y - tooltip.offsetHeight - 12;
-  if (top < 8) top = y + 20;
+  // Place above the node, overlapping by 6px so mouse can travel to it
+  let top = nodeScreenY - tooltip.offsetHeight + 6;
+  // If not enough room above, place below with overlap
+  if (top < 8) top = nodeScreenY + nodeScreenH - 6;
 
   tooltip.style.left = `${left}px`;
   tooltip.style.top = `${top}px`;
@@ -679,8 +712,9 @@ function onCanvasMouseLeave(): void {
   isDraggingCanvas = false;
   isDraggingNode = false;
   draggedNode = null;
-  renderState.hoveredNodeId = null;
-  if (tooltip) tooltip.style.display = 'none';
+  if (!tooltipHovered) {
+    hideTooltip();
+  }
   if (canvas) canvas.style.cursor = 'grab';
   redraw();
 }
