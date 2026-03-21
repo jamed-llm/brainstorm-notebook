@@ -107,11 +107,65 @@ const chatgpt: PlatformConfig = {
   },
 };
 
-const platforms: PlatformConfig[] = [claude, chatgpt];
+const gemini: PlatformConfig = {
+  name: 'gemini',
+  conversationList: [
+    'infinite-scroller',
+    '.conversation-container',
+    'main',
+  ],
+  // user-query and model-response are sibling custom elements (no shared turn wrapper)
+  messageWrapper: 'user-query, model-response',
+  stopButton: [
+    'button[aria-label="Stop"]',
+    'button[aria-label="Stop generating"]',
+    'button[aria-label="停止"]',
+    'mat-icon[data-mat-icon-name="stop_circle"]',
+  ],
+  userMessageContent: [
+    '.query-text',
+    '.query-content',
+  ],
+  assistantMessageContent: [
+    'message-content .markdown',
+    '.model-response-text',
+    '.response-container',
+  ],
+  streaming: '.markdown[aria-busy="true"], .loading-indicator, .response-loading',
+  getConversationId: () => {
+    // gemini.google.com/app/<id> or gemini.google.com/chat/<id>
+    const match = window.location.pathname.match(/\/(?:app|chat)\/([a-f0-9]+)/);
+    return match?.[1] ?? null;
+  },
+  isUserMessage: (wrapper: Element) => {
+    return wrapper.matches('user-query');
+  },
+  extractUserText: (wrapper: Element) => {
+    // Text lives in .query-text > p.query-text-line
+    const queryText = wrapper.querySelector('.query-text');
+    if (queryText) return queryText.textContent?.trim() ?? '';
+    const queryContent = wrapper.querySelector('.query-content');
+    if (queryContent) return queryContent.textContent?.trim() ?? '';
+    return wrapper.textContent?.trim() ?? '';
+  },
+  extractAssistantText: (wrapper: Element) => {
+    // Response text in message-content > .markdown
+    const markdown = wrapper.querySelector('message-content .markdown');
+    if (markdown) return markdown.textContent?.trim() ?? '';
+    const responseText = wrapper.querySelector('.model-response-text');
+    if (responseText) return responseText.textContent?.trim() ?? '';
+    const markdown2 = wrapper.querySelector('.markdown');
+    if (markdown2) return markdown2.textContent?.trim() ?? '';
+    return wrapper.textContent?.trim() ?? '';
+  },
+};
+
+const platforms: PlatformConfig[] = [claude, chatgpt, gemini];
 
 export function detectPlatform(): PlatformConfig {
   const host = window.location.hostname;
   if (host.includes('chatgpt.com') || host.includes('chat.openai.com')) return chatgpt;
+  if (host.includes('gemini.google.com')) return gemini;
   // Default to Claude
   return claude;
 }

@@ -28,3 +28,12 @@ export async function loadPassphrase(): Promise<string | null> {
   const result = await chrome.storage.local.get('passphrase');
   return result.passphrase ?? null;
 }
+
+export async function clearAllGraphs(): Promise<number> {
+  const all = await chrome.storage.local.get(null);
+  const graphKeys = Object.keys(all).filter((k) => k.startsWith(GRAPH_PREFIX));
+  if (graphKeys.length > 0) {
+    await chrome.storage.local.remove(graphKeys);
+  }
+  return graphKeys.length;
+}

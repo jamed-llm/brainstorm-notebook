@@ -2,7 +2,7 @@ import { render } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 import { ApiKeyEntry, ApiKeyStore } from '../shared/types';
 import { encrypt, generateSalt } from '../shared/crypto';
-import { saveKeyStore, loadKeyStore, loadPassphrase } from '../shared/storage';
+import { saveKeyStore, loadKeyStore, loadPassphrase, clearAllGraphs } from '../shared/storage';
 import { KeyManager } from './key-manager';
 
 function App() {
@@ -158,6 +158,19 @@ function App() {
           onDelete={handleDelete}
           onReorder={handleReorder}
         />
+      </div>
+
+      <div class="section">
+        <h2>Cache</h2>
+        <p style="font-size:13px;color:#6b7280;margin-bottom:10px">
+          Clear all saved mind-note graphs. API keys and passphrase are kept.
+        </p>
+        <button class="danger" onClick={async () => {
+          const count = await clearAllGraphs();
+          showStatus(`Cleared ${count} graph${count === 1 ? '' : 's'}`);
+        }}>
+          Clear all graphs
+        </button>
       </div>
 
       {status && (
