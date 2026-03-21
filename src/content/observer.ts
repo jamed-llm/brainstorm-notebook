@@ -131,6 +131,8 @@ export function startObserver(onResponseComplete: ResponseCompleteCallback): Obs
   let wasGenerating = false;
 
   function isGenerating(): boolean {
+    // Platform-specific override (e.g. Gemini checks response-footer.complete)
+    if (platform.isGenerating?.()) return true;
     if (queryFirst(platform.stopButton) !== null) return true;
     if (document.querySelector(platform.streaming) !== null) return true;
     // On ChatGPT: if the last article is a user turn, the assistant is about to respond

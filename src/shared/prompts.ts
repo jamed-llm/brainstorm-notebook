@@ -32,7 +32,7 @@ Rules for deciding parents:
 - If this is an entirely new topic with no connection to ANY existing node, parents MUST be an empty array []. This creates a new root node at the top level of the graph. Do not force a connection — only connect nodes that are genuinely related in topic or context.
 - Do not include more than 3 parents total.
 - It is completely fine and expected to have multiple root nodes (empty parents). A conversation often covers several unrelated topics.
-- IMPORTANT: Write the title and summary in the same language as the conversation. If the conversation is in Chinese, write in Chinese; if in French, write in French; etc.`;
+- IMPORTANT: Write the title and summary in the SAME language as the Human message below. Do NOT translate or switch languages. If the human wrote in English, respond in English. If in Japanese, respond in Japanese. If in Chinese, respond in Chinese. Match the exact language used.`;
 }
 
 export interface BatchTurn {
@@ -75,7 +75,7 @@ Rules:
 - It is completely fine and expected to have multiple root nodes (empty parents). Conversations often cover several unrelated topics.
 - Max 3 parents per node.
 - Every turn in the conversation must appear exactly once in the output array, in order.
-- IMPORTANT: Write the title and summary in the same language as the conversation. If the conversation is in Chinese, write in Chinese; if in French, write in French; etc.`;
+- IMPORTANT: Write the title and summary in the SAME language as the Human messages. Do NOT translate or switch languages. If the human wrote in English, respond in English. If in Japanese, respond in Japanese. If in Chinese, respond in Chinese. Match the exact language used.`;
 }
 
 export function buildMergePrompt(

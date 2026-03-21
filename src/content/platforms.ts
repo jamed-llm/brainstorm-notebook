@@ -22,6 +22,8 @@ export interface PlatformConfig {
   extractUserText?: (wrapper: Element) => string;
   /** Extract text from an assistant message wrapper (optional override) */
   extractAssistantText?: (wrapper: Element) => string;
+  /** Optional override for checking if the model is still generating */
+  isGenerating?: () => boolean;
 }
 
 const claude: PlatformConfig = {
@@ -107,11 +109,78 @@ const chatgpt: PlatformConfig = {
   },
 };
 
-const platforms: PlatformConfig[] = [claude, chatgpt];
+const gemini: PlatformConfig = {
+  name: 'gemini',
+  conversationList: [
+    'infinite-scroller',
+    '.conversation-container',
+    'main',
+  ],
+  // user-query and model-response are sibling custom elements (no shared turn wrapper)
+  messageWrapper: 'user-query, model-response',
+  stopButton: [
+    'button[aria-label="Stop"]',
+    'button[aria-label="Stop generating"]',
+    'button[aria-label="停止"]',
+    'mat-icon[data-mat-icon-name="stop_circle"]',
+  ],
+  userMessageContent: [
+    '.query-text',
+    '.query-content',
+  ],
+  assistantMessageContent: [
+    'message-content .markdown',
+    '.model-response-text',
+    '.response-container',
+  ],
+  streaming: '.markdown[aria-busy="true"], .loading-indicator, .response-loading',
+  getConversationId: () => {
+    // gemini.google.com/app/<id> or gemini.google.com/chat/<id>
+    const match = window.location.pathname.match(/\/(?:app|chat)\/([a-f0-9]+)/);
+    return match?.[1] ?? null;
+  },
+  isGenerating: () => {
+    // Check if the last model-response has an incomplete response-footer
+    const responses = document.querySelectorAll('model-response');
+    if (responses.length === 0) return false;
+    const last = responses[responses.length - 1];
+    const footer = last.querySelector('.response-footer');
+    // During streaming the footer either doesn't exist yet or lacks the 'complete' class
+    if (!footer || !footer.classList.contains('complete')) return true;
+    // Also check aria-busy on the markdown content
+    const markdown = last.querySelector('.markdown[aria-busy="true"]');
+    if (markdown) return true;
+    return false;
+  },
+  isUserMessage: (wrapper: Element) => {
+    return wrapper.matches('user-query');
+  },
+  extractUserText: (wrapper: Element) => {
+    // Text lives in .query-text > p.query-text-line
+    const queryText = wrapper.querySelector('.query-text');
+    if (queryText) return queryText.textContent?.trim() ?? '';
+    const queryContent = wrapper.querySelector('.query-content');
+    if (queryContent) return queryContent.textContent?.trim() ?? '';
+    return wrapper.textContent?.trim() ?? '';
+  },
+  extractAssistantText: (wrapper: Element) => {
+    // Response text in message-content > .markdown
+    const markdown = wrapper.querySelector('message-content .markdown');
+    if (markdown) return markdown.textContent?.trim() ?? '';
+    const responseText = wrapper.querySelector('.model-response-text');
+    if (responseText) return responseText.textContent?.trim() ?? '';
+    const markdown2 = wrapper.querySelector('.markdown');
+    if (markdown2) return markdown2.textContent?.trim() ?? '';
+    return wrapper.textContent?.trim() ?? '';
+  },
+};
+
+const platforms: PlatformConfig[] = [claude, chatgpt, gemini];
 
 export function detectPlatform(): PlatformConfig {
   const host = window.location.hostname;
   if (host.includes('chatgpt.com') || host.includes('chat.openai.com')) return chatgpt;
+  if (host.includes('gemini.google.com')) return gemini;
   // Default to Claude
   return claude;
 }
