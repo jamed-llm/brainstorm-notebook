@@ -115,6 +115,41 @@ export function injectFloatingButton(): void {
   });
   floatingBtn.addEventListener('click', togglePanel);
   document.body.appendChild(floatingBtn);
+
+  // Coffee support button
+  const coffeeFab = document.createElement('a');
+  coffeeFab.id = 'brainstorm-notebook-coffee';
+  coffeeFab.href = 'https://www.buymeacoffee.com/godlucky';
+  coffeeFab.target = '_blank';
+  coffeeFab.rel = 'noopener noreferrer';
+  coffeeFab.textContent = '\u2615';
+  coffeeFab.style.cssText = `
+    position: fixed; bottom: 72px; right: 20px; z-index: 999998;
+    width: 44px; height: 44px; border-radius: 50%;
+    background: #FFDD00; color: #6F4E37; font-size: 22px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    text-decoration: none; user-select: none; transition: transform 0.15s;
+  `;
+  const coffeeTip = document.createElement('div');
+  coffeeTip.textContent = 'Help me do more!';
+  coffeeTip.style.cssText = `
+    position: absolute; right: 52px; top: 50%; transform: translateY(-50%);
+    white-space: nowrap; background: #1f2937; color: #fff;
+    font-size: 12px; padding: 5px 10px; border-radius: 4px;
+    pointer-events: none; opacity: 0; transition: opacity 0.2s;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  `;
+  coffeeFab.appendChild(coffeeTip);
+  coffeeFab.addEventListener('mouseenter', () => {
+    coffeeFab.style.transform = 'scale(1.1)';
+    coffeeTip.style.opacity = '1';
+  });
+  coffeeFab.addEventListener('mouseleave', () => {
+    coffeeFab.style.transform = 'scale(1)';
+    coffeeTip.style.opacity = '0';
+  });
+  document.body.appendChild(coffeeFab);
 }
 
 export function togglePanel(): void {
@@ -196,25 +231,7 @@ function createPanel(): void {
   statusEl.className = 'bn-status';
   statusEl.textContent = 'Ready';
 
-  const supportWrap = document.createElement('span');
-  supportWrap.className = 'bn-support-wrap';
-
-  const supportLink = document.createElement('a');
-  supportLink.className = 'bn-support-link';
-  supportLink.href = 'https://www.buymeacoffee.com/godlucky';
-  supportLink.target = '_blank';
-  supportLink.rel = 'noopener noreferrer';
-  supportLink.textContent = '\u2615';
-
-  const supportTip = document.createElement('span');
-  supportTip.className = 'bn-support-tip';
-  supportTip.textContent = 'Help me do more!';
-
-  supportWrap.appendChild(supportLink);
-  supportWrap.appendChild(supportTip);
-
   statusBar.appendChild(statusEl);
-  statusBar.appendChild(supportWrap);
 
   // Tooltip card
   tooltip = document.createElement('div');
