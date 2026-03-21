@@ -189,9 +189,22 @@ function createPanel(): void {
   canvasWrap.appendChild(canvas);
 
   // Status bar
+  const statusBar = document.createElement('div');
+  statusBar.className = 'bn-status-bar';
+
   statusEl = document.createElement('div');
   statusEl.className = 'bn-status';
   statusEl.textContent = 'Ready';
+
+  const supportLink = document.createElement('a');
+  supportLink.className = 'bn-support-link';
+  supportLink.href = 'https://www.buymeacoffee.com/godlucky';
+  supportLink.target = '_blank';
+  supportLink.rel = 'noopener noreferrer';
+  supportLink.textContent = 'Support';
+
+  statusBar.appendChild(statusEl);
+  statusBar.appendChild(supportLink);
 
   // Tooltip card
   tooltip = document.createElement('div');
@@ -213,7 +226,7 @@ function createPanel(): void {
   panel.appendChild(header);
   panel.appendChild(canvasWrap);
   panel.appendChild(tooltip);
-  panel.appendChild(statusEl);
+  panel.appendChild(statusBar);
   shadow.appendChild(panel);
 
   // Event listeners
