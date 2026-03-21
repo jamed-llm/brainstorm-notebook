@@ -191,12 +191,30 @@
   opacity: 0.3;
 }
 
-.bn-status {
+.bn-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 8px 14px;
-  font-size: 11px;
-  color: #6b7280;
   border-top: 1px solid #e5e7eb;
   background: #ffffff;
+}
+
+.bn-status {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.bn-support-link {
+  color: #9ca3af;
+  text-decoration: none;
+  font-size: 10px;
+  flex-shrink: 0;
+  transition: color 0.2s;
+}
+
+.bn-support-link:hover {
+  color: #2563eb;
 }
 
 .bn-error {
