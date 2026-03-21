@@ -85,6 +85,61 @@
   display: block;
 }
 
+.bn-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.bn-toggle-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b7280;
+  user-select: none;
+}
+
+.bn-toggle-switch {
+  position: relative;
+  width: 30px;
+  height: 16px;
+}
+
+.bn-toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.bn-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: #d1d5db;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.bn-toggle-slider::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 12px;
+  height: 12px;
+  background: #ffffff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.bn-toggle-switch input:checked + .bn-toggle-slider {
+  background: #2563eb;
+}
+
+.bn-toggle-switch input:checked + .bn-toggle-slider::before {
+  transform: translateX(14px);
+}
+
 .bn-btn-active {
   background: #dbeafe;
   border-color: #3b82f6;

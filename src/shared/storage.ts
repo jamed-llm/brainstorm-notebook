@@ -30,6 +30,15 @@ export async function loadPassphrase(): Promise<string | null> {
   return result.passphrase ?? null;
 }
 
+export async function saveLlmMode(enabled: boolean): Promise<void> {
+  await chrome.storage.local.set({ llmMode: enabled });
+}
+
+export async function loadLlmMode(): Promise<boolean> {
+  const result = await chrome.storage.local.get('llmMode');
+  return result.llmMode ?? true;
+}
+
 export async function clearAllGraphs(): Promise<number> {
   const all = await chrome.storage.local.get(null);
   const graphKeys = Object.keys(all).filter((k) => k.startsWith(GRAPH_PREFIX));

@@ -2,7 +2,7 @@ import { MindNoteGraph, GraphNode, GraphEdge } from '../shared/types';
 import { layoutGraph, getCanvasHeight } from './graph-layout';
 import { renderGraph, hitTestNode, hitTestEdge, createRenderState, screenToGraph, RenderState } from './graph-canvas';
 import { findAncestors, findDirectParents, hasPath } from './graph-interaction';
-import { saveGraph, loadGraph } from '../shared/storage';
+import { saveGraph, loadGraph, saveLlmMode, loadLlmMode } from '../shared/storage';
 import { getConversationId, startObserver, extractAllTurns, findAllMessageElements, ConversationTurn, ObserverHandle } from './observer';
 import { detectPlatform } from './platforms';
 import { ExtensionMessage, AnalyzeTurnPayload } from '../shared/messages';
@@ -32,6 +32,62 @@ let dragStartNodeY = 0;
 let hasDragged = false;
 let connectSourceNode: GraphNode | null = null;
 let onKeyDown: ((e: KeyboardEvent) => void) | null = null;
+let llmEnabled = true;
+/** Keyword sets for each node (keyed by node ID) – used in non-LLM mode. */
+let nodeKeywords = new Map<string, Set<string>>();
+
+// ── Non-LLM helpers ──────────────────────────────────────────────────
+
+const STOPWORDS = new Set([
+  'a','an','the','and','or','but','if','in','on','at','to','for','of','is',
+  'it','that','this','with','as','was','are','be','by','not','from','have',
+  'has','had','do','does','did','will','would','could','should','can','may',
+  'its','their','they','them','there','then','than','what','which','who',
+  'how','when','where','why','all','each','every','any','some','no','more',
+  'most','other','into','over','such','about','been','being','were','just',
+  'also','very','much','many','only','your','you','our','we','my','me','he',
+  'she','his','her','him','out','up','so','one','two','like','get','got',
+  'make','made','use','used','using','know','think','want','need','say',
+  'said','going','come','came','see','look','go','new',
+]);
+
+function truncateWords(text: string, maxWords: number): string {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return words.join(' ');
+  return words.slice(0, maxWords).join(' ') + '...';
+}
+
+function extractKeywords(text: string): Set<string> {
+  const words = text.toLowerCase().split(/[^a-z0-9\u00C0-\u024F\u3000-\u9FFF\uAC00-\uD7AF]+/);
+  const kw = new Set<string>();
+  for (const w of words) {
+    if (w.length >= 3 && !STOPWORDS.has(w)) kw.add(w);
+  }
+  return kw;
+}
+
+function jaccardWithRecency(
+  a: Set<string>,
+  b: Set<string>,
+  distance: number,
+  totalNodes: number,
+): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const w of a) { if (b.has(w)) intersection++; }
+  const union = a.size + b.size - intersection;
+  if (union === 0) return 0;
+  const jaccard = intersection / union;
+  const recency = 0.7 + 0.3 * (1 - distance / Math.max(totalNodes, 1));
+  return jaccard * recency;
+}
+
+function scoreToStrength(score: number): 'strong' | 'middle' | 'thin' | null {
+  if (score >= 0.20) return 'strong';
+  if (score >= 0.10) return 'middle';
+  if (score >= 0.05) return 'thin';
+  return null;
+}
 
 /** Inject a floating button on the page so users can open the panel without the extension icon. */
 export function injectFloatingButton(): void {
@@ -112,6 +168,13 @@ function createPanel(): void {
         <button class="bn-btn bn-btn-sm" id="bn-cut">Cut</button>
         <span class="bn-btn-tip">Press to enter cut mode, then hover an edge and click to remove it. Press again or Esc to exit.</span>
       </span>
+      <label class="bn-toggle">
+        <span class="bn-toggle-label">LLM</span>
+        <span class="bn-toggle-switch">
+          <input type="checkbox" id="bn-llm-toggle" />
+          <span class="bn-toggle-slider"></span>
+        </span>
+      </label>
     </div>
   `;
 
@@ -147,6 +210,19 @@ function createPanel(): void {
   shadow.getElementById('bn-rebuild')?.addEventListener('click', rebuildFromConversation);
   shadow.getElementById('bn-reformat')?.addEventListener('click', reformat);
   shadow.getElementById('bn-close')?.addEventListener('click', destroyPanel);
+
+  // LLM toggle
+  const llmToggle = shadow.getElementById('bn-llm-toggle') as HTMLInputElement | null;
+  if (llmToggle) {
+    loadLlmMode().then((enabled) => {
+      llmEnabled = enabled;
+      llmToggle.checked = enabled;
+    });
+    llmToggle.addEventListener('change', () => {
+      llmEnabled = llmToggle.checked;
+      saveLlmMode(llmEnabled);
+    });
+  }
 
   canvas.addEventListener('mousemove', onCanvasMouseMove);
   canvas.addEventListener('mousedown', onCanvasMouseDown);
@@ -633,31 +709,55 @@ async function onResponseComplete(
 
   setStatus('Analyzing...', true);
 
-  // Use numeric indices so the LLM can reliably reference existing nodes
-  const existingNodes = currentGraph.nodes.map((n, i) => ({
-    id: String(i),
-    title: n.title,
-    summary: n.summary,
-  }));
-
-  const payload: AnalyzeTurnPayload = {
-    existingNodes,
-    humanMessage: latestTurn.human,
-    assistantMessage: latestTurn.assistant,
-  };
-
   try {
-    const response = await chrome.runtime.sendMessage({
-      type: 'ANALYZE_TURN',
-      payload,
-    } as ExtensionMessage);
+    let result: { title: string; summary: string; parents: { nodeId: string; strength: 'strong' | 'middle' | 'thin' }[] };
 
-    if (response.type === 'API_ERROR') {
-      setStatus(response.error, false, true);
-      return;
+    if (!llmEnabled) {
+      // Non-LLM: extract title/summary from text, connect via keyword similarity
+      const title = truncateWords(latestTurn.human, 30);
+      const summary = truncateWords(latestTurn.assistant, 100);
+      const newKw = extractKeywords(latestTurn.human + ' ' + latestTurn.assistant);
+      const parents: { nodeId: string; strength: 'strong' | 'middle' | 'thin' }[] = [];
+      const total = currentGraph.nodes.length;
+
+      for (let i = 0; i < total; i++) {
+        const existKw = nodeKeywords.get(currentGraph.nodes[i].id);
+        if (!existKw) continue;
+        const score = jaccardWithRecency(newKw, existKw, total - i, total);
+        const strength = scoreToStrength(score);
+        if (strength) parents.push({ nodeId: String(i), strength });
+      }
+
+      result = { title, summary, parents };
+      // Store keywords for this node (will be keyed by newNodeId below)
+      (result as any)._keywords = newKw;
+    } else {
+      // LLM mode: send to service worker
+      const existingNodes = currentGraph.nodes.map((n, i) => ({
+        id: String(i),
+        title: n.title,
+        summary: n.summary,
+      }));
+
+      const payload: AnalyzeTurnPayload = {
+        existingNodes,
+        humanMessage: latestTurn.human,
+        assistantMessage: latestTurn.assistant,
+      };
+
+      const response = await chrome.runtime.sendMessage({
+        type: 'ANALYZE_TURN',
+        payload,
+      } as ExtensionMessage);
+
+      if (response.type === 'API_ERROR') {
+        setStatus(response.error, false, true);
+        return;
+      }
+
+      result = response.payload;
     }
 
-    const result = response.payload;
     const newNodeId = `node-${Date.now()}`;
     const messageIndex = turns.length - 1;
 
@@ -670,6 +770,11 @@ async function onResponseComplete(
       x: 0,
       y: 0,
     };
+
+    // Store keywords for non-LLM mode
+    if (!llmEnabled) {
+      nodeKeywords.set(newNodeId, (result as any)._keywords);
+    }
 
     const newEdges: GraphEdge[] = [];
     for (const parent of result.parents) {
@@ -734,33 +839,67 @@ async function rebuildFromConversation(): Promise<void> {
     return;
   }
 
-  // Reset graph
+  // Reset graph and keyword cache
   currentGraph = { conversationId: convId, nodes: [], edges: [] };
+  nodeKeywords.clear();
   reformat();
 
   setStatus(`Analyzing ${turns.length} turns...`, true);
 
   try {
-    const response = await chrome.runtime.sendMessage({
-      type: 'ANALYZE_BATCH',
-      payload: {
-        turns: turns.map((t, i) => ({ index: i, human: t.human, assistant: t.assistant })),
-      },
-    } as ExtensionMessage);
+    let batchResult: {
+      nodes: { index: number; title: string; summary: string; parents: { index: number; strength: 'strong' | 'middle' | 'thin' }[] }[];
+    };
 
-    if (response.type === 'API_ERROR') {
-      setStatus(`Error: ${response.error}`, false, true);
-      isRebuilding = false;
-      return;
+    if (!llmEnabled) {
+      // Non-LLM batch: keyword-based connections
+      const turnKeywords: Set<string>[] = turns.map(
+        (t) => extractKeywords(t.human + ' ' + t.assistant),
+      );
+      const batchNodes: typeof batchResult.nodes = [];
+
+      for (let i = 0; i < turns.length; i++) {
+        const parents: { index: number; strength: 'strong' | 'middle' | 'thin' }[] = [];
+
+        for (let j = 0; j < i; j++) {
+          const score = jaccardWithRecency(turnKeywords[i], turnKeywords[j], i - j, i);
+          const strength = scoreToStrength(score);
+          if (strength) parents.push({ index: j, strength });
+        }
+
+        batchNodes.push({
+          index: i,
+          title: truncateWords(turns[i].human, 30),
+          summary: truncateWords(turns[i].assistant, 100),
+          parents,
+        });
+      }
+
+      batchResult = { nodes: batchNodes };
+    } else {
+      // LLM batch
+      const response = await chrome.runtime.sendMessage({
+        type: 'ANALYZE_BATCH',
+        payload: {
+          turns: turns.map((t, i) => ({ index: i, human: t.human, assistant: t.assistant })),
+        },
+      } as ExtensionMessage);
+
+      if (response.type === 'API_ERROR') {
+        setStatus(`Error: ${response.error}`, false, true);
+        isRebuilding = false;
+        return;
+      }
+
+      batchResult = { nodes: response.payload.nodes };
     }
 
-    const result = response.payload;
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
     const nodeIdByIndex = new Map<number, string>();
 
     // Create all nodes
-    for (const batchNode of result.nodes) {
+    for (const batchNode of batchResult.nodes) {
       const nodeId = `node-${Date.now()}-${batchNode.index}`;
       nodeIdByIndex.set(batchNode.index, nodeId);
       nodes.push({
@@ -772,10 +911,15 @@ async function rebuildFromConversation(): Promise<void> {
         x: 0,
         y: 0,
       });
+
+      // Cache keywords for non-LLM incremental updates
+      if (!llmEnabled) {
+        nodeKeywords.set(nodeId, extractKeywords(turns[batchNode.index].human + ' ' + turns[batchNode.index].assistant));
+      }
     }
 
     // Create all edges
-    for (const batchNode of result.nodes) {
+    for (const batchNode of batchResult.nodes) {
       const targetId = nodeIdByIndex.get(batchNode.index);
       if (!targetId) continue;
       for (const parent of batchNode.parents) {

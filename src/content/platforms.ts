@@ -22,6 +22,8 @@ export interface PlatformConfig {
   extractUserText?: (wrapper: Element) => string;
   /** Extract text from an assistant message wrapper (optional override) */
   extractAssistantText?: (wrapper: Element) => string;
+  /** Optional override for checking if the model is still generating */
+  isGenerating?: () => boolean;
 }
 
 const claude: PlatformConfig = {
@@ -136,6 +138,19 @@ const gemini: PlatformConfig = {
     // gemini.google.com/app/<id> or gemini.google.com/chat/<id>
     const match = window.location.pathname.match(/\/(?:app|chat)\/([a-f0-9]+)/);
     return match?.[1] ?? null;
+  },
+  isGenerating: () => {
+    // Check if the last model-response has an incomplete response-footer
+    const responses = document.querySelectorAll('model-response');
+    if (responses.length === 0) return false;
+    const last = responses[responses.length - 1];
+    const footer = last.querySelector('.response-footer');
+    // During streaming the footer either doesn't exist yet or lacks the 'complete' class
+    if (!footer || !footer.classList.contains('complete')) return true;
+    // Also check aria-busy on the markdown content
+    const markdown = last.querySelector('.markdown[aria-busy="true"]');
+    if (markdown) return true;
+    return false;
   },
   isUserMessage: (wrapper: Element) => {
     return wrapper.matches('user-query');
