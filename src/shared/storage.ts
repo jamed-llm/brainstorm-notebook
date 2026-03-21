@@ -67,6 +67,15 @@ export async function getGraphCacheStats(): Promise<GraphCacheStats> {
  * Clear graphs older than the given age. Graphs without an updatedAt
  * timestamp (created before this feature) are treated as old enough to clear.
  */
+export async function loadSupportMilestone(): Promise<number> {
+  const result = await chrome.storage.local.get('supportMilestoneKB');
+  return result.supportMilestoneKB ?? 0;
+}
+
+export async function saveSupportMilestone(kb: number): Promise<void> {
+  await chrome.storage.local.set({ supportMilestoneKB: kb });
+}
+
 export async function clearGraphsByAge(maxAgeMs: number): Promise<number> {
   const cutoff = Date.now() - maxAgeMs;
   const all = await chrome.storage.local.get(null);
