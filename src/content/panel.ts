@@ -196,6 +196,9 @@ function createPanel(): void {
   statusEl.className = 'bn-status';
   statusEl.textContent = 'Ready';
 
+  const supportWrap = document.createElement('span');
+  supportWrap.className = 'bn-support-wrap';
+
   const supportLink = document.createElement('a');
   supportLink.className = 'bn-support-link';
   supportLink.href = 'https://www.buymeacoffee.com/godlucky';
@@ -203,8 +206,15 @@ function createPanel(): void {
   supportLink.rel = 'noopener noreferrer';
   supportLink.textContent = '\u2615';
 
+  const supportTip = document.createElement('span');
+  supportTip.className = 'bn-support-tip';
+  supportTip.textContent = 'Help me do more!';
+
+  supportWrap.appendChild(supportLink);
+  supportWrap.appendChild(supportTip);
+
   statusBar.appendChild(statusEl);
-  statusBar.appendChild(supportLink);
+  statusBar.appendChild(supportWrap);
 
   // Tooltip card
   tooltip = document.createElement('div');
