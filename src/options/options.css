@@ -148,6 +148,19 @@ button.danger:hover {
   font-size: 14px;
 }
 
+.cache-stats {
+  font-size: 13px;
+  color: #374151;
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+
+.cache-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .status-msg {
   margin-top: 12px;
   font-size: 13px;

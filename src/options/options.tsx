@@ -2,7 +2,11 @@ import { render } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 import { ApiKeyEntry, ApiKeyStore } from '../shared/types';
 import { encrypt, generateSalt } from '../shared/crypto';
-import { saveKeyStore, loadKeyStore, loadPassphrase, clearAllGraphs } from '../shared/storage';
+import {
+  saveKeyStore, loadKeyStore, loadPassphrase,
+  clearAllGraphs, clearGraphsByAge,
+  getGraphCacheStats, GraphCacheStats,
+} from '../shared/storage';
 import { KeyManager } from './key-manager';
 
 function App() {
@@ -14,6 +18,11 @@ function App() {
   const [newKeyValue, setNewKeyValue] = useState('');
   const [status, setStatus] = useState('');
   const [statusError, setStatusError] = useState(false);
+  const [cacheStats, setCacheStats] = useState<GraphCacheStats | null>(null);
+
+  function refreshCacheStats() {
+    getGraphCacheStats().then(setCacheStats);
+  }
 
   useEffect(() => {
     loadKeyStore().then((store) => {
@@ -29,6 +38,7 @@ function App() {
         chrome.runtime.sendMessage({ type: 'SET_PASSPHRASE', passphrase: p });
       }
     });
+    refreshCacheStats();
   }, []);
 
   function showStatus(msg: string, isError = false) {
@@ -163,14 +173,40 @@ function App() {
       <div class="section">
         <h2>Cache</h2>
         <p style="font-size:13px;color:#6b7280;margin-bottom:10px">
-          Clear all saved mind-note graphs. API keys and passphrase are kept.
+          Clear saved mind-note graphs. API keys and passphrase are kept.
         </p>
-        <button class="danger" onClick={async () => {
-          const count = await clearAllGraphs();
-          showStatus(`Cleared ${count} graph${count === 1 ? '' : 's'}`);
-        }}>
-          Clear all graphs
-        </button>
+        {cacheStats && (
+          <p class="cache-stats">
+            {cacheStats.count} graph{cacheStats.count === 1 ? '' : 's'} &middot;{' '}
+            {cacheStats.sizeBytes < 1024
+              ? `${cacheStats.sizeBytes} B`
+              : cacheStats.sizeBytes < 1048576
+                ? `${(cacheStats.sizeBytes / 1024).toFixed(1)} KB`
+                : `${(cacheStats.sizeBytes / 1048576).toFixed(1)} MB`}
+          </p>
+        )}
+        <div class="cache-actions">
+          {([
+            ['24 hours', 24 * 60 * 60 * 1000],
+            ['3 days', 3 * 24 * 60 * 60 * 1000],
+            ['1 month', 30 * 24 * 60 * 60 * 1000],
+          ] as const).map(([label, ms]) => (
+            <button class="danger" onClick={async () => {
+              const count = await clearGraphsByAge(ms);
+              refreshCacheStats();
+              showStatus(`Cleared ${count} graph${count === 1 ? '' : 's'} older than ${label}`);
+            }}>
+              Older than {label}
+            </button>
+          ))}
+          <button class="danger" onClick={async () => {
+            const count = await clearAllGraphs();
+            refreshCacheStats();
+            showStatus(`Cleared ${count} graph${count === 1 ? '' : 's'}`);
+          }}>
+            Clear all
+          </button>
+        </div>
       </div>
 
       {status && (

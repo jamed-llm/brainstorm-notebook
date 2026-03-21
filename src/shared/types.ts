@@ -18,6 +18,8 @@ export interface MindNoteGraph {
   conversationId: string;
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /** Epoch ms – set automatically by saveGraph(). */
+  updatedAt?: number;
 }
 
 export interface ApiKeyEntry {
