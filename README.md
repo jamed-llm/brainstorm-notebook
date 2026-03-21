@@ -1,6 +1,6 @@
 # Brainstorm Notebook
 
-A Chrome extension that generates interactive mind-map graphs from your AI conversations on **Claude** and **ChatGPT**. Each conversation turn becomes a node, with edges showing how topics flow and connect across the discussion.
+A Chrome extension that generates interactive mind-map graphs from your AI conversations on **Claude**, **ChatGPT**, and **Gemini**. Each conversation turn becomes a node, with edges showing how topics flow and connect across the discussion.
 
 ## Example
 
@@ -12,16 +12,17 @@ A Chrome extension that generates interactive mind-map graphs from your AI conve
 - **Real-time updates** — New nodes appear automatically as you chat
 - **Batch rebuild** — Analyze an entire conversation at once for accurate cross-topic connections
 - **Multi-provider API support** — Works with Anthropic (Claude), OpenAI, and Google Gemini keys, auto-detected by prefix
-- **Multi-platform support** — Works on both claude.ai and chatgpt.com
+- **Multi-platform support** — Works on claude.ai, chatgpt.com, and gemini.google.com
 - **Interactive canvas** — Pan, zoom, drag nodes, click to highlight ancestor chains
 - **Manual edge editing** — Connect or cut edges between nodes to refine the graph
 - **Hover tooltips** — See full title and summary for each node
 - **Encrypted key storage** — API keys encrypted at rest with AES-256-GCM via a user-set passphrase
 - **Per-conversation persistence** — Graphs and node positions saved locally
+- **Cache management** — View cache size and clear graphs by age (24h, 3 days, 1 month, or all)
 
 ## How It Works
 
-1. Open a conversation on [claude.ai](https://claude.ai) or [chatgpt.com](https://chatgpt.com)
+1. Open a conversation on [claude.ai](https://claude.ai), [chatgpt.com](https://chatgpt.com), or [gemini.google.com](https://gemini.google.com)
 2. Click the extension icon or the floating button to open the panel
 3. Click **Rebuild** to analyze the full conversation, or let it auto-detect new responses
 4. The LLM reads each turn and decides:
@@ -94,7 +95,7 @@ src/
 │   ├── graph-canvas.ts          # Canvas rendering, hit testing, pan/zoom
 │   ├── graph-layout.ts          # Hierarchical level-based layout
 │   ├── graph-interaction.ts     # Ancestor path traversal
-│   ├── platforms.ts             # Platform configs (Claude, ChatGPT)
+│   ├── platforms.ts             # Platform configs (Claude, ChatGPT, Gemini)
 │   └── panel.css                # Panel styles (injected into shadow DOM)
 ├── options/
 │   ├── index.html               # Options page entry
