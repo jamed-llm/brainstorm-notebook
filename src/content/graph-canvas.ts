@@ -196,6 +196,15 @@ export function renderGraph(
   ctx.restore();
 }
 
+function truncateLine(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let truncated = text;
+  while (truncated.length > 0 && ctx.measureText(truncated + '\u2026').width > maxWidth) {
+    truncated = truncated.slice(0, -1);
+  }
+  return truncated + '\u2026';
+}
+
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const words = text.split(' ');
   const lines: string[] = [];
@@ -215,7 +224,12 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
   // Limit to 3 lines, truncate last if needed
   if (lines.length > 3) {
     lines.length = 3;
-    lines[2] = lines[2].slice(0, -1) + '\u2026';
+    lines[2] = truncateLine(ctx, lines[2], maxWidth);
+  }
+
+  // Ensure every line fits within maxWidth
+  for (let i = 0; i < lines.length; i++) {
+    lines[i] = truncateLine(ctx, lines[i], maxWidth);
   }
 
   return lines;

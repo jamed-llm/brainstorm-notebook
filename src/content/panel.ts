@@ -5,6 +5,7 @@ import { findAncestors, findDirectParents, hasPath } from './graph-interaction';
 import { saveGraph, loadGraph, saveLlmMode, loadLlmMode, getGraphCacheStats, loadSupportMilestone, saveSupportMilestone } from '../shared/storage';
 import { getConversationId, startObserver, extractAllTurns, findAllMessageElements, ConversationTurn, ObserverHandle } from './observer';
 import { detectPlatform } from './platforms';
+import { exportAsMarkdown, exportAsJson, exportAsHtml } from './export';
 import { NODE_WIDTH, NODE_HEIGHT } from './graph-layout';
 import { ExtensionMessage, AnalyzeTurnPayload } from '../shared/messages';
 import panelCss from './panel.css?inline';
@@ -215,7 +216,15 @@ function createPanel(): void {
       <span>Brainstorm Notebook</span>
       <div class="bn-header-actions">
         <button class="bn-btn bn-btn-primary" id="bn-rebuild">Rebuild</button>
-        <button class="bn-btn" id="bn-reformat">Reformat</button>
+        <span class="bn-btn-tip-wrap bn-export-wrap">
+          <button class="bn-btn" id="bn-export">Export</button>
+          <span class="bn-btn-tip bn-btn-tip-right">Export the conversation in Markdown, JSON, or as an interactive HTML with the brainstorm graph.</span>
+          <div class="bn-export-popup" id="bn-export-popup">
+            <button class="bn-btn bn-btn-sm" id="bn-export-md">Markdown</button>
+            <button class="bn-btn bn-btn-sm" id="bn-export-json">JSON</button>
+            <button class="bn-btn bn-btn-sm" id="bn-export-html">HTML (with graph)</button>
+          </div>
+        </span>
         <span class="bn-btn-tip-wrap">
           <a class="bn-btn bn-btn-coffee" id="bn-coffee" href="https://www.buymeacoffee.com/godlucky" target="_blank" rel="noopener noreferrer">&#9749;</a>
           <span class="bn-btn-tip bn-btn-tip-right">Help me do more!</span>
@@ -224,6 +233,7 @@ function createPanel(): void {
       </div>
     </div>
     <div class="bn-header-row bn-toolbar">
+      <button class="bn-btn bn-btn-sm" id="bn-reformat">Reformat</button>
       <span class="bn-btn-tip-wrap">
         <button class="bn-btn bn-btn-sm" id="bn-connect">Connect</button>
         <span class="bn-btn-tip">Press to enter connect mode, then click source node and target node to add an edge. Press again or Esc to exit.</span>
@@ -303,6 +313,42 @@ function createPanel(): void {
   shadow.getElementById('bn-rebuild')?.addEventListener('click', rebuildFromConversation);
   shadow.getElementById('bn-reformat')?.addEventListener('click', reformat);
   shadow.getElementById('bn-close')?.addEventListener('click', destroyPanel);
+
+  // Export popup
+  const exportBtn = shadow.getElementById('bn-export');
+  const exportPopup = shadow.getElementById('bn-export-popup');
+  exportBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    exportPopup?.classList.toggle('bn-open');
+  });
+  // Close popup on outside click
+  shadow.addEventListener('click', (e) => {
+    if (exportPopup?.classList.contains('bn-open') && !exportPopup.contains(e.target as Node) && e.target !== exportBtn) {
+      exportPopup.classList.remove('bn-open');
+    }
+  });
+  const convId = () => currentGraph?.conversationId || 'export';
+  shadow.getElementById('bn-export-md')?.addEventListener('click', () => {
+    const turns = extractAllTurns();
+    if (turns.length === 0) { if (statusEl) statusEl.textContent = 'No conversation to export'; return; }
+    exportAsMarkdown(turns, convId());
+    exportPopup?.classList.remove('bn-open');
+    if (statusEl) statusEl.textContent = 'Exported as Markdown';
+  });
+  shadow.getElementById('bn-export-json')?.addEventListener('click', () => {
+    const turns = extractAllTurns();
+    if (turns.length === 0) { if (statusEl) statusEl.textContent = 'No conversation to export'; return; }
+    exportAsJson(turns, convId());
+    exportPopup?.classList.remove('bn-open');
+    if (statusEl) statusEl.textContent = 'Exported as JSON';
+  });
+  shadow.getElementById('bn-export-html')?.addEventListener('click', () => {
+    const turns = extractAllTurns();
+    if (!currentGraph || turns.length === 0) { if (statusEl) statusEl.textContent = 'No graph or conversation to export'; return; }
+    exportAsHtml(currentGraph, turns, convId());
+    exportPopup?.classList.remove('bn-open');
+    if (statusEl) statusEl.textContent = 'Exported as HTML';
+  });
 
   // LLM toggle
   const llmToggle = shadow.getElementById('bn-llm-toggle') as HTMLInputElement | null;
@@ -830,7 +876,7 @@ async function onResponseComplete(
 
     if (!llmEnabled) {
       // Non-LLM: extract title/summary from text, connect via keyword similarity
-      const title = truncateWords(latestTurn.human, 30);
+      const title = latestTurn.human.slice(0, 30).trim() + (latestTurn.human.length > 30 ? '...' : '');
       const summary = truncateWords(latestTurn.assistant, 100);
       const newKw = extractKeywords(latestTurn.human + ' ' + latestTurn.assistant);
       const parents: { nodeId: string; strength: 'strong' | 'middle' | 'thin' }[] = [];
@@ -986,7 +1032,7 @@ async function rebuildFromConversation(): Promise<void> {
 
         batchNodes.push({
           index: i,
-          title: truncateWords(turns[i].human, 30),
+          title: turns[i].human.slice(0, 30).trim() + (turns[i].human.length > 30 ? '...' : ''),
           summary: truncateWords(turns[i].assistant, 100),
           parents,
         });
