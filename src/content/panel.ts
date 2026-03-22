@@ -123,7 +123,7 @@ export function injectFloatingButton(): void {
     pointer-events: none; position: relative;
   `;
   const coffeeTip = document.createElement('div');
-  coffeeTip.textContent = 'Help me do more!';
+  coffeeTip.textContent = 'Leave a tip!';
   coffeeTip.style.cssText = `
     position: absolute; right: 52px; top: 50%; transform: translateY(-50%);
     white-space: nowrap; background: #1f2937; color: #fff;
@@ -227,7 +227,7 @@ function createPanel(): void {
         </span>
         <span class="bn-btn-tip-wrap">
           <a class="bn-btn bn-btn-coffee" id="bn-coffee" href="https://www.buymeacoffee.com/godlucky" target="_blank" rel="noopener noreferrer">&#9749;</a>
-          <span class="bn-btn-tip bn-btn-tip-right">Help me do more!</span>
+          <span class="bn-btn-tip bn-btn-tip-right">Leave a tip!</span>
         </span>
         <button class="bn-btn" id="bn-close">Close</button>
       </div>
@@ -289,7 +289,7 @@ function createPanel(): void {
   const supportPopup = document.createElement('div');
   supportPopup.className = 'bn-support-popup';
   supportPopup.innerHTML = `
-    <div class="bn-support-popup-text">Like this app? Support me to do better!</div>
+    <div class="bn-support-popup-text">Enjoying this app? Leave a tip!</div>
     <div class="bn-support-popup-actions">
       <a class="bn-btn bn-btn-primary" href="https://www.buymeacoffee.com/godlucky" target="_blank" rel="noopener noreferrer">\u2615 Buy me a coffee</a>
       <button class="bn-btn bn-support-popup-dismiss">Later</button>
