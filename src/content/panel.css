@@ -20,6 +20,9 @@
   font-size: 13px;
   font-weight: 600;
   color: #1f2937;
+  overflow: visible;
+  position: relative;
+  z-index: 20;
 }
 
 .bn-header-row {
@@ -253,6 +256,40 @@
 }
 
 
+
+.bn-export-wrap {
+  position: relative;
+}
+
+.bn-export-wrap:has(.bn-open) .bn-btn-tip {
+  display: none !important;
+}
+
+.bn-export-popup {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  padding: 6px;
+  z-index: 30;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+}
+
+.bn-export-popup.bn-open {
+  display: flex;
+}
+
+.bn-export-popup .bn-btn-sm {
+  text-align: left;
+  width: 100%;
+  white-space: nowrap;
+}
 
 .bn-error {
   color: #dc2626;
