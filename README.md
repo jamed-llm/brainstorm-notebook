@@ -1,6 +1,10 @@
 # Brainstorm Notebook
 
+[![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Install-blue?logo=googlechrome)](https://chromewebstore.google.com/detail/brainstorm-notebook/plgbkaillgekkjhbeodnpohapafhhhoj)
+
 A Chrome extension that generates interactive mind-map graphs from your AI conversations on **Claude**, **ChatGPT**, and **Gemini**. Each conversation turn becomes a node, with edges showing how topics flow and connect across the discussion.
+
+**[Install from Chrome Web Store](https://chromewebstore.google.com/detail/brainstorm-notebook/plgbkaillgekkjhbeodnpohapafhhhoj)**
 
 ## Example
 
